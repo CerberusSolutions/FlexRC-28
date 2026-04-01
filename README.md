@@ -7,6 +7,15 @@ FlexRC-28 connects an Icom RC-28 USB remote encoder to a FlexRadio FLEX-6000/800
 ![Status: Working](https://img.shields.io/badge/status-working-brightgreen)
 ![Platform: Windows](https://img.shields.io/badge/platform-Windows-blue)
 ![Electron](https://img.shields.io/badge/built%20with-Electron-47848F)
+![Licence: GPL-3.0](https://img.shields.io/badge/licence-GPL--3.0-blue)
+
+---
+
+## Download
+
+**[⬇ Download the latest installer from Releases](https://github.com/CerberusSolutions/FlexRC-28/releases/latest)**
+
+No Node.js or build tools required — just download and run the installer.
 
 ---
 
@@ -16,7 +25,7 @@ FlexRC-28 connects an Icom RC-28 USB remote encoder to a FlexRadio FLEX-6000/800
 - **Step snapping** — switches between step sizes with automatic frequency boundary snap
 - **Snap to 1 kHz** — detects panadapter clicks and snaps to nearest 1 kHz; ignores mouse wheel and dial tuning
 - **PTT** — momentary press-and-hold, or hold 2.5 seconds to latch TX on; tap again to release
-- **Mode cycle** — step through LSB → USB → CW → AM (configurable)
+- **Mode cycle** — step through LSB → USB → CW → AM
 - **Band cycle** — step through 160m to 6m with automatic mode selection per band
 - **RIT** — toggle on/off, tune with dial, display shows offset; clear with button hold
 - **Link LED** — solid green when connected to radio
@@ -31,7 +40,6 @@ FlexRC-28 connects an Icom RC-28 USB remote encoder to a FlexRadio FLEX-6000/800
 ## Requirements
 
 - Windows 10/11
-- Node.js 18 or later
 - FlexRadio FLEX-6000 or FLEX-8000 series running SmartSDR for Windows
 - Icom RC-28 USB remote encoder
 
@@ -39,18 +47,20 @@ FlexRC-28 connects an Icom RC-28 USB remote encoder to a FlexRadio FLEX-6000/800
 
 ## Installation
 
+### Option 1 — Installer (recommended)
+
+Download `FlexRC-28 Setup x.x.x.exe` from the [Releases page](https://github.com/CerberusSolutions/FlexRC-28/releases/latest) and run it. Creates a Start Menu shortcut and desktop icon. No additional software required.
+
+### Option 2 — Run from source
+
+Requires [Node.js 18+](https://nodejs.org).
+
 ```bash
 git clone https://github.com/CerberusSolutions/FlexRC-28.git
 cd FlexRC-28
 npm install
 npm start
 ```
-
-> **Note:** `node-hid` requires native build tools on Windows. If `npm install` fails with a build error, run:
-> ```bash
-> npm install --global node-gyp
-> npm install node-hid --build-from-source
-> ```
 
 ---
 
@@ -125,7 +135,7 @@ FlexRC-28/
 └── src/
     ├── main.js         Electron main process
     ├── preload.js      IPC bridge
-    ├── rc28.js         RC-28 HID driver
+    ├── rc28.js         RC-28 HID driver (WebHID)
     ├── flex.js         SmartSDR TCP API client
     └── controller.js   RC-28 to radio action mapping
 ```
@@ -156,10 +166,10 @@ Button state values:
 | `0x05` | F1 pressed |
 | `0x03` | F2 pressed |
 
-### Output report (host to RC-28, endpoint 0x01, 33 bytes via node-hid)
+### Output report (host to RC-28, 32 bytes via WebHID)
 
 ```
-[0x00 reportId] [0x01 packetType] [ledByte] [0x00 x 30]
+[0x01][ledByte][0x00 x 30]
 ```
 
 LED byte bitmask (all active-low):
@@ -199,7 +209,7 @@ Connects via TCP to port 4992. Radio discovery uses UDP broadcast on port 4992.
 
 ## Acknowledgements
 
-Built with [Electron](https://electronjs.org) and [node-hid](https://github.com/node-hid/node-hid).
+Built with [Electron](https://electronjs.org). Uses Electron's built-in WebHID API for RC-28 communication — no native build tools required.
 
 RC-28 HID protocol reverse-engineered using USBPcap and Wireshark.
 
