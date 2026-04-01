@@ -10,9 +10,7 @@
     "build": "electron-builder --win",
     "build:dir": "electron-builder --win --dir"
   },
-  "dependencies": {
-    "node-hid": "^3.1.0"
-  },
+  "dependencies": {},
   "devDependencies": {
     "electron": "^28.0.0",
     "electron-builder": "^24.0.0"
@@ -47,12 +45,8 @@
       "installerHeaderIcon": "assets/icon.ico",
       "createDesktopShortcut": true,
       "createStartMenuShortcut": true,
-      "shortcutName": "FlexRC-28",
-      "license": "LICENSE"
+      "shortcutName": "FlexRC-28"
     },
-    "npmRebuild": true,
-    "nodeGypRebuild": false,
-    "buildDependenciesFromSource": false,
     "electronVersion": "28.0.0"
   }
 }
