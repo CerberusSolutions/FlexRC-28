@@ -1,15 +1,58 @@
 {
-  "name": "flexrc28",
+  "name": "flexrc-28",
   "version": "1.0.0",
   "description": "Icom RC-28 controller for FlexRadio SmartSDR",
   "main": "src/main.js",
+  "author": "Cerberus Solutions",
+  "license": "GPL-3.0",
   "scripts": {
-    "start": "electron ."
+    "start": "electron .",
+    "build": "electron-builder --win",
+    "build:dir": "electron-builder --win --dir"
   },
   "dependencies": {
     "node-hid": "^3.1.0"
   },
   "devDependencies": {
-    "electron": "^28.0.0"
+    "electron": "^28.0.0",
+    "electron-builder": "^24.0.0"
+  },
+  "build": {
+    "appId": "com.cerberussolutions.flexrc28",
+    "productName": "FlexRC-28",
+    "copyright": "Copyright © 2025 Cerberus Solutions",
+    "directories": {
+      "output": "dist"
+    },
+    "files": [
+      "src/**/*",
+      "index.html",
+      "package.json"
+    ],
+    "win": {
+      "target": [
+        {
+          "target": "nsis",
+          "arch": ["x64"]
+        }
+      ],
+      "icon": "assets/icon.ico"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "allowElevation": true,
+      "installerIcon": "assets/icon.ico",
+      "uninstallerIcon": "assets/icon.ico",
+      "installerHeaderIcon": "assets/icon.ico",
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "FlexRC-28",
+      "license": "LICENSE"
+    },
+    "npmRebuild": true,
+    "nodeGypRebuild": false,
+    "buildDependenciesFromSource": false,
+    "electronVersion": "28.0.0"
   }
 }
