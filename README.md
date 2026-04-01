@@ -1,87 +1,212 @@
 # FlexRC-28
 
-Connects an Icom RC-28 USB encoder to a FlexRadio SmartSDR station via the SmartSDR TCP API.
+**Icom RC-28 USB encoder controller for FlexRadio SmartSDR**
+
+FlexRC-28 connects an Icom RC-28 USB remote encoder to a FlexRadio FLEX-6000/8000 series radio running SmartSDR for Windows. It replaces the need for a mouse when tuning, gives you one-touch mode and band cycling, and adds PTT latch for comfortable ragchew operation.
+
+![Status: Working](https://img.shields.io/badge/status-working-brightgreen)
+![Platform: Windows](https://img.shields.io/badge/platform-Windows-blue)
+![Electron](https://img.shields.io/badge/built%20with-Electron-47848F)
+
+---
 
 ## Features
 
-- Dial tuning with velocity-proportional step size
-- RIT mode (F2 by default)
-- Configurable button assignments — short press and long hold independently
-- Link LED mirrors radio connection state
-- TX LED mirrors transmit state
-- Radio discovery (auto-finds Flex on local subnet)
-- Settings saved between sessions
-- Optional snap-to-1kHz tuning
+- **Dial tuning** — velocity-sensitive, slow (10 Hz/step) and fast (100 Hz/step) modes
+- **Step snapping** — switches between step sizes with automatic frequency boundary snap
+- **Snap to 1 kHz** — detects panadapter clicks and snaps to nearest 1 kHz; ignores mouse wheel and dial tuning
+- **PTT** — momentary press-and-hold, or hold 2.5 seconds to latch TX on; tap again to release
+- **Mode cycle** — step through LSB → USB → CW → AM (configurable)
+- **Band cycle** — step through 160m to 6m with automatic mode selection per band
+- **RIT** — toggle on/off, tune with dial, display shows offset; clear with button hold
+- **Link LED** — solid green when connected to radio
+- **TX LED** — lights during transmit, stays lit when latched
+- **F1/F2 LEDs** — mirror app state (fast mode, RIT active)
+- **Radio discovery** — automatically finds FlexRadio on local network
+- **All button assignments configurable** — assign any action to any button press or hold
+- **Settings persisted** — reconnects automatically on next launch
+
+---
 
 ## Requirements
 
-- Node.js 18+
-- npm
-- Electron
-- Icom RC-28 plugged in via USB
-- FlexRadio SmartSDR running on local network
+- Windows 10/11
+- Node.js 18 or later
+- FlexRadio FLEX-6000 or FLEX-8000 series running SmartSDR for Windows
+- Icom RC-28 USB remote encoder
 
-## Install & Run
+---
+
+## Installation
 
 ```bash
+git clone https://github.com/CerberusSolutions/FlexRC-28.git
+cd FlexRC-28
 npm install
 npm start
 ```
 
-## HID Protocol (decoded from USB capture)
+> **Note:** `node-hid` requires native build tools on Windows. If `npm install` fails with a build error, run:
+> ```bash
+> npm install --global node-gyp
+> npm install node-hid --build-from-source
+> ```
 
-32-byte interrupt report from RC-28 (endpoint 0x81):
+---
 
-| Byte | Meaning |
-|------|---------|
-| b0   | Report ID = 0x01 |
-| b1   | Dial velocity (0=stopped, 1–16+=speed) |
-| b2   | Always 0x00 |
-| b3   | Direction: 0x01=CW (freq up), 0x02=CCW (freq down) |
-| b4   | Always 0x00 |
-| b5   | Button bitmask (active-low): bit0=PTT, bit1=F1, bit2=F2 |
+## Usage
 
-Button state values:
-- `0x07` = idle
-- `0x06` = PTT held
-- `0x05` = F1 pressed
-- `0x03` = F2 pressed
+1. Plug in the RC-28 via USB
+2. Start SmartSDR and open a slice
+3. Launch FlexRC-28 — the RC-28 will be detected automatically
+4. Enter your radio's IP address (or select from the discovery dropdown) and station name
+5. Click **Connect**
+6. The Link LED on the RC-28 will go solid green
 
-LED output (32-byte report to endpoint 0x01, byte 1):
-- `0x07` = Link LED blinking (not connected)
-- `0x0F` = Link LED solid (connected)
+### Default button assignments
 
-## Default Button Assignments
+| Button | Action |
+|--------|--------|
+| PTT press & hold | Transmit (momentary) |
+| PTT hold 2.5s | Latch TX on — tap to release |
+| F1 press | Toggle fast/slow tuning |
+| F1 hold | Cycle mode (LSB → USB → CW → AM) |
+| F2 press | Toggle RIT |
+| F2 hold | Cycle band (160m → 80m → … → 6m) |
 
-| Button   | Action |
-|----------|--------|
-| PTT Press | Transmit |
-| F1 Press  | Toggle fast/slow tuning |
-| F1 Hold   | Lock/unlock dial |
-| F2 Press  | Toggle RIT mode |
-| F2 Hold   | Clear RIT to zero |
+All assignments can be changed in the Button Assignments panel. Available actions:
 
-All assignments are configurable in the UI.
+- PTT (Transmit)
+- Toggle Fast/Slow Tuning
+- Lock/Unlock Dial
+- Cycle Mode (LSB/USB/CW/AM)
+- Cycle Band (160m–6m)
+- Toggle RIT
+- Clear RIT
+- Snap to 1 kHz
+- No Action
 
-## Flex API
+### Snap to 1 kHz
 
-Connects to radio on port 4992 (TCP). Key commands:
-- `sub slice all` — subscribe to slice status
-- `slice N tune <MHz>` — tune slice
-- `slice set N rit_freq=<Hz>` — set RIT offset
-- `slice set N rit_on=1/0` — enable/disable RIT
-- `transmit set transmit=1/0` — PTT control
+Enable the **Snap to 1kHz** toggle to automatically snap to the nearest 1 kHz whenever you click in the SmartSDR panadapter. Mouse wheel and dial tuning are not affected — the feature detects clicks by their sub-10 Hz frequency remainder, which only occurs on panadapter clicks.
 
-## File Structure
+### PTT Latch
+
+- **Short press and hold** — transmits while held, releases on button release
+- **Hold 2.5 seconds** — latches TX on; the TX badge changes to **TX LATCH**
+- **Tap PTT while latched** — immediately releases TX
+
+---
+
+## Band cycle frequencies
+
+| Band | Frequency | Mode |
+|------|-----------|------|
+| 160m | 1.900 MHz | LSB |
+| 80m  | 3.750 MHz | LSB |
+| 60m  | 5.372 MHz | USB |
+| 40m  | 7.150 MHz | LSB |
+| 30m  | 10.120 MHz | USB |
+| 20m  | 14.225 MHz | USB |
+| 17m  | 18.128 MHz | USB |
+| 15m  | 21.285 MHz | USB |
+| 12m  | 24.940 MHz | USB |
+| 10m  | 28.500 MHz | USB |
+| 6m   | 50.150 MHz | USB |
+
+---
+
+## File structure
 
 ```
-flexrc28/
+FlexRC-28/
 ├── index.html          UI
 ├── package.json
 └── src/
     ├── main.js         Electron main process
     ├── preload.js      IPC bridge
-    ├── rc28.js         RC-28 HID module
-    ├── flex.js         FlexRadio TCP API module
-    └── controller.js   Wires RC-28 to Flex with configurable actions
+    ├── rc28.js         RC-28 HID driver
+    ├── flex.js         SmartSDR TCP API client
+    └── controller.js   RC-28 to radio action mapping
 ```
+
+---
+
+## RC-28 HID Protocol
+
+Reverse-engineered from USB capture (USBPcap/Wireshark). The RC-28 presents as a USB HID device (VID `0x0C26`, PID `0x001E`).
+
+### Input report (RC-28 to host, endpoint 0x81, 32 bytes)
+
+| Byte | Meaning |
+|------|---------|
+| 0    | Report type — always `0x01` |
+| 1    | Dial velocity (0 = stopped, 1–16+ = speed) |
+| 2    | Always `0x00` |
+| 3    | Dial direction: `0x01` = CW (freq up), `0x02` = CCW (freq down) |
+| 4    | Always `0x00` |
+| 5    | Button bitmask (active-low): bit 0 = PTT, bit 1 = F1, bit 2 = F2 |
+
+Button state values:
+
+| Value | State |
+|-------|-------|
+| `0x07` | Idle — all released |
+| `0x06` | PTT held |
+| `0x05` | F1 pressed |
+| `0x03` | F2 pressed |
+
+### Output report (host to RC-28, endpoint 0x01, 33 bytes via node-hid)
+
+```
+[0x00 reportId] [0x01 packetType] [ledByte] [0x00 x 30]
+```
+
+LED byte bitmask (all active-low):
+
+| Bit | LED |
+|-----|-----|
+| 0   | TX/PTT LED |
+| 1   | F1 LED |
+| 2   | F2 LED |
+| 3   | Link LED |
+
+| Value | State |
+|-------|-------|
+| `0x0F` | All LEDs off |
+| `0x07` | Link LED on |
+| `0x06` | Link + TX on |
+| `0x05` | Link + F1 on |
+| `0x03` | Link + F2 on |
+
+---
+
+## SmartSDR API commands used
+
+| Action | Command |
+|--------|---------|
+| Subscribe to slice status | `sub slice all` |
+| Subscribe to TX status | `sub tx all` |
+| Tune frequency | `slice tune <id> <MHz>` |
+| Set mode | `slice set <id> mode=<mode>` |
+| Set RIT offset | `slice set <id> rit_freq=<Hz>` |
+| Enable/disable RIT | `slice set <id> rit_on=1/0` |
+| PTT on/off | `xmit 1/0` |
+
+Connects via TCP to port 4992. Radio discovery uses UDP broadcast on port 4992.
+
+---
+
+## Acknowledgements
+
+Built with [Electron](https://electronjs.org) and [node-hid](https://github.com/node-hid/node-hid).
+
+RC-28 HID protocol reverse-engineered using USBPcap and Wireshark.
+
+SmartSDR TCP/IP API documented at [github.com/flexradio/smartsdr-api-docs](https://github.com/flexradio/smartsdr-api-docs).
+
+---
+
+## Licence
+
+MIT
