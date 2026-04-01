@@ -170,14 +170,17 @@ function initHardware() {
   // Start Flex discovery
   flex.startDiscovery();
 
-  // Enable raw protocol logging to console — helps diagnose Flex issues
-  flex.enableRawLogging();
-
-  // Also forward raw lines to renderer activity log (first 200 chars only)
-  flex.on('raw', (line) => {
-    // Log everything for now so we can see what the radio sends
-    send('flex:raw', line.slice(0, 200));
-  });
+  // Raw protocol logging — off by default
+  // Enable with:  npm start -- --debug
+  // Installed app: FlexRC-28.exe --debug
+  const debugMode = process.argv.includes('--debug');
+  if (debugMode) {
+    flex.enableRawLogging();
+    flex.on('raw', (line) => {
+      send('flex:raw', line.slice(0, 200));
+    });
+    console.log('[FlexRC-28] Debug mode enabled — raw Flex output visible in activity log');
+  }
 }
 
 function cleanup() {

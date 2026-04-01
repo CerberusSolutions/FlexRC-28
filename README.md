@@ -220,3 +220,41 @@ SmartSDR TCP/IP API documented at [github.com/flexradio/smartsdr-api-docs](https
 ## Licence
 
 GNU General Public License v3.0 — see [LICENSE](LICENSE) for details.
+
+---
+
+## Troubleshooting
+
+### Debug mode
+
+If the app is not behaving as expected, run it in debug mode to see the raw SmartSDR API traffic in the activity log.
+
+**From source:**
+```bash
+npm start -- --debug
+```
+
+**Installed app** (run from PowerShell or Command Prompt):
+```powershell
+& "$env:LOCALAPPDATA\Programs\FlexRC-28\FlexRC-28.exe" --debug
+```
+
+In debug mode the activity log will show all raw status messages from the radio, prefixed with `⬡`. This output is useful when reporting issues.
+
+### RC-28 not detected
+
+- Check the RC-28 is plugged in before launching the app
+- Check Windows Device Manager — it should appear as *Icom RC-28 REMOTE ENCODER*
+- Try a different USB port or cable
+
+### Radio not found
+
+- Confirm SmartSDR is running and a slice is open
+- Check the IP address — use the discovery dropdown if unsure
+- Confirm the radio and PC are on the same subnet
+- FlexRC-28 does not currently support SmartLink remote connections (a VPN to your home network will work)
+
+### Frequency display not updating
+
+- Check the station name matches what is shown at the bottom of the SmartSDR window
+- Disconnect and reconnect

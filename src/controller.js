@@ -48,6 +48,7 @@ class Controller extends EventEmitter {
     this._pttDown = false;
     this._pttLatched = false;
     this._pttPressTime = 0;
+    this._pttLatchTimer = null;
     this._snapEnabled = false;
     this._weJustTuned = false;
     this._weJustTunedTimer = null;
@@ -108,13 +109,14 @@ class Controller extends EventEmitter {
           // Already latched — any press unlatches immediately
           this._pttLatched = false;
           this._pttDown = false;
+          if (this._pttLatchTimer) { clearTimeout(this._pttLatchTimer); this._pttLatchTimer = null; }
           this.flex.setPTT(false).catch(() => {});
           this.rc28.setTxLED(false);
           this.emit('ptt', false);
           this.emit('pttLatch', false);
           return;
         }
-        // Start momentary TX and start timing for latch
+        // Start momentary TX
         this._pttDown = true;
         this._pttPressTime = Date.now();
         this.flex.setPTT(true).catch((e) => {
@@ -123,31 +125,37 @@ class Controller extends EventEmitter {
         });
         this.rc28.setTxLED(true);
         this.emit('ptt', true);
+
+        // Start latch countdown — fires at 2.5s while button still held
+        this._pttLatchTimer = setTimeout(() => {
+          this._pttLatchTimer = null;
+          if (this._pttDown && !this._pttLatched) {
+            this._pttLatched = true;
+            this.emit('pttLatch', true);
+            this.emit('actionExecuted', { action: 'ptt_latch', btn: 'ptt', type: 'hold', value: 'LATCHED' });
+          }
+        }, 2500);
       }
     });
 
     // ── Button Up ──
     this.rc28.on('buttonUp', (btn, duration) => {
       if (btn === 'ptt') {
-        if (this._pttLatched) return; // already latched — ignore release
-
-        const held = duration >= 2500; // 2.5 seconds = latch threshold
-        if (held) {
-          // Long hold → latch TX on
-          this._pttLatched = true;
-          this._pttDown = true;
-          // TX already on — just signal latch
-          this.emit('pttLatch', true);
-          this.emit('actionExecuted', { action: 'ptt_latch', btn: 'ptt', type: 'hold', value: 'LATCHED' });
-        } else {
-          // Short press → momentary, release TX
-          this._pttDown = false;
-          this.flex.setPTT(false).catch((e) => {
-            this.emit('error', `PTT off failed: ${e.message}`);
-          });
-          this.rc28.setTxLED(false);
-          this.emit('ptt', false);
+        // Cancel latch timer if released before 2.5s
+        if (this._pttLatchTimer) {
+          clearTimeout(this._pttLatchTimer);
+          this._pttLatchTimer = null;
         }
+
+        if (this._pttLatched) return; // latched — ignore release, stay on TX
+
+        // Short press — release TX
+        this._pttDown = false;
+        this.flex.setPTT(false).catch((e) => {
+          this.emit('error', `PTT off failed: ${e.message}`);
+        });
+        this.rc28.setTxLED(false);
+        this.emit('ptt', false);
       }
     });
 

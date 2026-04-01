@@ -779,7 +779,8 @@ function updateFreqDisplay(slice) {
 
   const mhz = freq.toFixed(6);
   const parts = mhz.split('.');
-  const formatted = `${parts[0]}.${parts[1].slice(0,3)} ${parts[1].slice(3)}`;
+  // Format: 14.225.000 MHz  (decimal between kHz and Hz groups)
+  const formatted = `${parts[0]}.${parts[1].slice(0,3)}.${parts[1].slice(3)}`;
 
   const disp = document.getElementById('freq-display');
   disp.classList.toggle('rit-mode', !!slice.rit_on);
