@@ -1,0 +1,841 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>FlexRC-28</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Share+Tech+Mono&family=Barlow:wght@300;400;600;700&family=Barlow+Condensed:wght@400;600;700&display=swap');
+
+  :root {
+    --bg:        #080c18;
+    --surface:   #0e1525;
+    --panel:     #131b2e;
+    --border:    #1e2d4a;
+    --accent:    #00aaff;
+    --accent2:   #00ffaa;
+    --warn:      #ff6b35;
+    --tx:        #ff3333;
+    --muted:     #3a4a65;
+    --text:      #c8d8f0;
+    --textdim:   #5a7090;
+    --mono:      'Share Tech Mono', monospace;
+    --sans:      'Barlow', sans-serif;
+    --cond:      'Barlow Condensed', sans-serif;
+    --radius:    6px;
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: var(--sans);
+    font-size: 14px;
+    height: 100vh;
+    overflow: hidden;
+    -webkit-app-region: no-drag;
+    user-select: none;
+  }
+
+  /* ── Titlebar ── */
+  .titlebar {
+    -webkit-app-region: drag;
+    height: 32px;
+    background: #060a15;
+    display: flex;
+    align-items: center;
+    padding: 0 16px;
+    border-bottom: 1px solid var(--border);
+    gap: 10px;
+  }
+  .titlebar-logo {
+    font-family: var(--cond);
+    font-weight: 700;
+    font-size: 13px;
+    letter-spacing: 0.15em;
+    color: var(--accent);
+    text-transform: uppercase;
+  }
+  .titlebar-sep { flex: 1; }
+  .titlebar-ver {
+    font-family: var(--mono);
+    font-size: 10px;
+    color: var(--muted);
+  }
+
+  /* ── Layout ── */
+  .app {
+    display: flex;
+    flex-direction: column;
+    height: calc(100vh - 32px);
+    padding: 12px;
+    gap: 10px;
+    overflow-y: auto;
+  }
+
+  /* ── Section header ── */
+  .section-label {
+    font-family: var(--cond);
+    font-size: 10px;
+    font-weight: 600;
+    letter-spacing: 0.2em;
+    text-transform: uppercase;
+    color: var(--muted);
+    margin-bottom: 6px;
+  }
+
+  /* ── Status Bar ── */
+  .status-bar {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 8px;
+  }
+
+  .status-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 10px 14px;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    position: relative;
+    overflow: hidden;
+  }
+  .status-card::before {
+    content: '';
+    position: absolute;
+    left: 0; top: 0; bottom: 0;
+    width: 3px;
+    background: var(--muted);
+    border-radius: 3px 0 0 3px;
+    transition: background 0.3s;
+  }
+  .status-card.ok::before   { background: var(--accent2); }
+  .status-card.error::before { background: var(--warn); }
+  .status-card.tx::before   { background: var(--tx); }
+
+  .status-dot {
+    width: 8px; height: 8px;
+    border-radius: 50%;
+    background: var(--muted);
+    flex-shrink: 0;
+    transition: background 0.3s, box-shadow 0.3s;
+  }
+  .status-card.ok .status-dot {
+    background: var(--accent2);
+    box-shadow: 0 0 8px var(--accent2);
+  }
+  .status-card.error .status-dot { background: var(--warn); box-shadow: 0 0 8px var(--warn); }
+  .status-card.tx .status-dot   { background: var(--tx);   box-shadow: 0 0 8px var(--tx);   }
+
+  .status-card.blink .status-dot { animation: blink 1s ease-in-out infinite; }
+  @keyframes blink {
+    0%,100% { opacity: 1; } 50% { opacity: 0.2; }
+  }
+
+  .status-info { flex: 1; min-width: 0; }
+  .status-name {
+    font-family: var(--cond);
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: var(--textdim);
+  }
+  .status-value {
+    font-family: var(--mono);
+    font-size: 12px;
+    color: var(--text);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  /* ── Frequency Display ── */
+  .freq-panel {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 12px 16px;
+  }
+  .freq-display {
+    font-family: var(--mono);
+    font-size: 32px;
+    color: var(--accent);
+    text-align: center;
+    letter-spacing: 0.05em;
+    text-shadow: 0 0 20px rgba(0,170,255,0.4);
+    margin: 4px 0;
+  }
+  .freq-display.rit-mode { color: var(--accent2); text-shadow: 0 0 20px rgba(0,255,170,0.4); }
+  .freq-meta {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-top: 6px;
+  }
+  .freq-mode {
+    font-family: var(--cond);
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 0.15em;
+    color: var(--textdim);
+    text-transform: uppercase;
+  }
+  .freq-badges {
+    display: flex;
+    gap: 6px;
+  }
+  .badge {
+    font-family: var(--cond);
+    font-size: 10px;
+    font-weight: 600;
+    letter-spacing: 0.1em;
+    padding: 2px 8px;
+    border-radius: 3px;
+    text-transform: uppercase;
+    background: var(--panel);
+    border: 1px solid var(--border);
+    color: var(--muted);
+    transition: all 0.2s;
+  }
+  .badge.active { background: rgba(0,170,255,0.15); border-color: var(--accent); color: var(--accent); }
+  .badge.tx-active { background: rgba(255,51,51,0.2); border-color: var(--tx); color: var(--tx); animation: pulse-tx 0.8s ease infinite; }
+  .badge.tx-latched { background: rgba(255,51,51,0.35); border-color: var(--tx); color: var(--tx); font-weight: 700; letter-spacing: 0.05em; }
+  @keyframes pulse-tx { 0%,100% { opacity:1 } 50% { opacity:0.6 } }
+
+  /* ── Connect Panel ── */
+  .connect-panel {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 12px 14px;
+  }
+  .input-row {
+    display: grid;
+    grid-template-columns: 1fr 1fr auto;
+    gap: 8px;
+    align-items: end;
+  }
+  .input-group label {
+    display: block;
+    font-family: var(--cond);
+    font-size: 10px;
+    font-weight: 600;
+    letter-spacing: 0.15em;
+    text-transform: uppercase;
+    color: var(--textdim);
+    margin-bottom: 4px;
+  }
+  .input-group input, .input-group select {
+    width: 100%;
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    color: var(--text);
+    font-family: var(--mono);
+    font-size: 12px;
+    padding: 7px 10px;
+    outline: none;
+    transition: border-color 0.2s;
+  }
+  .input-group input:focus, .input-group select:focus {
+    border-color: var(--accent);
+  }
+  .input-group select option { background: var(--panel); }
+
+  /* ── Buttons ── */
+  .btn {
+    font-family: var(--cond);
+    font-size: 12px;
+    font-weight: 700;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    padding: 8px 16px;
+    border-radius: 4px;
+    border: none;
+    cursor: pointer;
+    transition: all 0.15s;
+    white-space: nowrap;
+  }
+  .btn-primary {
+    background: var(--accent);
+    color: #060a15;
+  }
+  .btn-primary:hover { background: #33bbff; }
+  .btn-primary:disabled { background: var(--muted); cursor: not-allowed; }
+
+  .btn-danger {
+    background: rgba(255,107,53,0.2);
+    border: 1px solid var(--warn);
+    color: var(--warn);
+  }
+  .btn-danger:hover { background: rgba(255,107,53,0.35); }
+
+  .btn-ghost {
+    background: transparent;
+    border: 1px solid var(--border);
+    color: var(--textdim);
+  }
+  .btn-ghost:hover { border-color: var(--accent); color: var(--accent); }
+
+  /* ── Button Assignment Panel ── */
+  .assign-panel {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 12px 14px;
+  }
+  .assign-grid {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+  }
+  .assign-row {
+    display: grid;
+    grid-template-columns: 110px 1fr;
+    gap: 10px;
+    align-items: center;
+  }
+  .assign-label {
+    font-family: var(--cond);
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: var(--textdim);
+  }
+  .assign-row select {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    color: var(--text);
+    font-family: var(--sans);
+    font-size: 12px;
+    padding: 5px 8px;
+    outline: none;
+    transition: border-color 0.2s;
+    cursor: pointer;
+  }
+  .assign-row select:focus { border-color: var(--accent); }
+  .assign-row select option { background: var(--panel); }
+
+  /* ── Activity Log ── */
+  .log-panel {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 10px 14px;
+    flex: 1;
+    min-height: 80px;
+  }
+  .log-scroll {
+    height: 80px;
+    overflow-y: auto;
+    scrollbar-width: thin;
+    scrollbar-color: var(--border) transparent;
+  }
+  .log-line {
+    font-family: var(--mono);
+    font-size: 11px;
+    color: var(--textdim);
+    line-height: 1.6;
+    white-space: nowrap;
+  }
+  .log-line .ts { color: var(--muted); }
+  .log-line .msg { color: var(--text); }
+  .log-line.ok .msg  { color: var(--accent2); }
+  .log-line.err .msg { color: var(--warn); }
+  .log-line.tx .msg  { color: var(--tx); }
+
+  /* ── Options row ── */
+  .options-row {
+    display: flex;
+    gap: 12px;
+    align-items: center;
+    margin-top: 8px;
+    padding-top: 8px;
+    border-top: 1px solid var(--border);
+  }
+  .toggle-label {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    cursor: pointer;
+    font-family: var(--cond);
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: var(--textdim);
+  }
+  .toggle-label input[type=checkbox] { display: none; }
+  .toggle-track {
+    width: 32px; height: 16px;
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    position: relative;
+    transition: all 0.2s;
+  }
+  .toggle-track::after {
+    content: '';
+    position: absolute;
+    left: 2px; top: 2px;
+    width: 10px; height: 10px;
+    border-radius: 50%;
+    background: var(--muted);
+    transition: all 0.2s;
+  }
+  input:checked + .toggle-track { background: rgba(0,170,255,0.2); border-color: var(--accent); }
+  input:checked + .toggle-track::after { left: 18px; background: var(--accent); }
+
+  /* ── Save row ── */
+  .save-row {
+    display: flex;
+    justify-content: flex-end;
+    gap: 8px;
+    margin-top: 8px;
+    padding-top: 8px;
+    border-top: 1px solid var(--border);
+  }
+
+  /* scrollbar */
+  ::-webkit-scrollbar { width: 4px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+  ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
+</style>
+</head>
+<body>
+
+<div class="titlebar">
+  <span class="titlebar-logo">⬡ FlexRC-28</span>
+  <span class="titlebar-sep"></span>
+  <span class="titlebar-ver">v1.0.0</span>
+</div>
+
+<div class="app">
+
+  <!-- Status Bar -->
+  <div>
+    <div class="section-label">Status</div>
+    <div class="status-bar">
+      <div class="status-card" id="rc28-card">
+        <div class="status-dot"></div>
+        <div class="status-info">
+          <div class="status-name">RC-28</div>
+          <div class="status-value" id="rc28-status">Not connected</div>
+        </div>
+      </div>
+      <div class="status-card" id="flex-card">
+        <div class="status-dot"></div>
+        <div class="status-info">
+          <div class="status-name">FlexRadio</div>
+          <div class="status-value" id="flex-status">Not connected</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Frequency Display -->
+  <div>
+    <div class="section-label">Active Slice</div>
+    <div class="freq-panel">
+      <div class="freq-display" id="freq-display">– –– . –––</div>
+      <div class="freq-meta">
+        <span class="freq-mode" id="slice-mode">–</span>
+        <div class="freq-badges">
+          <span class="badge" id="badge-rit">RIT</span>
+          <span class="badge" id="badge-fast">FAST</span>
+          <span class="badge" id="badge-lock">LOCK</span>
+          <span class="badge" id="badge-tx">TX</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Connect Panel -->
+  <div>
+    <div class="section-label">Radio Connection</div>
+    <div class="connect-panel">
+      <div class="input-row">
+        <div class="input-group">
+          <label>Radio IP / Host</label>
+          <input type="text" id="radio-ip" placeholder="192.168.1.x" spellcheck="false">
+        </div>
+        <div class="input-group">
+          <label>Station Name</label>
+          <input type="text" id="station-name" placeholder="e.g. G0RFC" spellcheck="false">
+        </div>
+        <div>
+          <button class="btn btn-primary" id="connect-btn">Connect</button>
+        </div>
+      </div>
+
+      <!-- Discovered radios -->
+      <div id="discovery-row" style="margin-top:8px; display:none;">
+        <div class="input-group">
+          <label>Discovered Radios</label>
+          <select id="discovered-select">
+            <option value="">– Select –</option>
+          </select>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Button Assignments -->
+  <div>
+    <div class="section-label">Button Assignments</div>
+    <div class="assign-panel">
+      <div class="assign-grid" id="assign-grid">
+        <!-- Populated by JS -->
+      </div>
+      <div class="options-row">
+        <label class="toggle-label">
+          <input type="checkbox" id="snap-tuning">
+          <span class="toggle-track"></span>
+          Snap to 1kHz
+        </label>
+      </div>
+      <div class="save-row">
+        <button class="btn btn-ghost" id="reset-btn">Reset</button>
+        <button class="btn btn-primary" id="save-btn">Save Settings</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Activity Log -->
+  <div style="flex:1;">
+    <div class="section-label">Activity</div>
+    <div class="log-panel">
+      <div class="log-scroll" id="log-scroll">
+        <!-- Log lines inserted here -->
+      </div>
+    </div>
+  </div>
+
+</div><!-- /app -->
+
+<script>
+// ── State ────────────────────────────────────────────────────────────────────
+let settings = {};
+let availableActions = [];
+let currentActions = {};
+let discoveredRadios = {};
+let flexConnected = false;
+
+const BUTTON_SLOTS = [
+  { key: 'ptt_press',  label: 'PTT Press'  },
+  { key: 'f1_press',   label: 'F1 Press'   },
+  { key: 'f1_hold',    label: 'F1 Hold'    },
+  { key: 'f2_press',   label: 'F2 Press'   },
+  { key: 'f2_hold',    label: 'F2 Hold'    },
+];
+
+// ── Init ─────────────────────────────────────────────────────────────────────
+async function init() {
+  settings         = await api.settings.load();
+  availableActions = await api.ctrl.getAvailableActions();
+  currentActions   = await api.ctrl.getActions();
+
+  // Populate inputs
+  document.getElementById('radio-ip').value     = settings.radioIP     || '';
+  document.getElementById('station-name').value = settings.stationName || '';
+  document.getElementById('snap-tuning').checked = !!settings.snapTuning;
+
+  buildAssignGrid();
+  bindEvents();
+  setupRadioListeners();
+
+  // Check current connection states
+  const rc28Ok   = await api.rc28.isConnected();
+  const flexOk   = await api.flex.isConnected();
+  setRC28Status(rc28Ok ? 'ok' : 'idle', rc28Ok ? 'Connected' : 'Plug in RC-28');
+  setFlexStatus(flexOk ? 'ok' : 'idle', flexOk ? settings.radioIP : 'Not connected');
+
+  log('FlexRC-28 ready', 'ok');
+}
+
+// ── Assignment Grid ───────────────────────────────────────────────────────────
+function buildAssignGrid() {
+  const grid = document.getElementById('assign-grid');
+  grid.innerHTML = '';
+
+  BUTTON_SLOTS.forEach(slot => {
+    const row = document.createElement('div');
+    row.className = 'assign-row';
+
+    const label = document.createElement('div');
+    label.className = 'assign-label';
+    label.textContent = slot.label;
+
+    const sel = document.createElement('select');
+    sel.id = `action-${slot.key}`;
+
+    availableActions.forEach(action => {
+      const opt = document.createElement('option');
+      opt.value = action.id;
+      opt.textContent = action.label;
+      if (currentActions[slot.key] === action.id) opt.selected = true;
+      sel.appendChild(opt);
+    });
+
+    row.appendChild(label);
+    row.appendChild(sel);
+    grid.appendChild(row);
+  });
+}
+
+// ── UI Events ────────────────────────────────────────────────────────────────
+function bindEvents() {
+  // Connect button
+  document.getElementById('connect-btn').addEventListener('click', async () => {
+    const ip   = document.getElementById('radio-ip').value.trim();
+    const name = document.getElementById('station-name').value.trim();
+    if (!ip) { log('Enter radio IP address', 'err'); return; }
+
+    if (flexConnected) {
+      await api.flex.disconnect();
+      flexConnected = false;
+      setFlexStatus('idle', 'Disconnected');
+      document.getElementById('connect-btn').textContent = 'Connect';
+      log('Disconnected from radio');
+      return;
+    }
+
+    setFlexStatus('blink', 'Connecting…');
+    log(`Connecting to ${ip}…`);
+    const result = await api.flex.connect(ip, name);
+
+    if (result.ok) {
+      flexConnected = true;
+      setFlexStatus('ok', ip);
+      document.getElementById('connect-btn').textContent = 'Disconnect';
+      log(`Connected to ${ip}`, 'ok');
+    } else {
+      setFlexStatus('error', 'Failed');
+      log(`Connection failed: ${result.error}`, 'err');
+    }
+  });
+
+  // Discovery select
+  document.getElementById('discovered-select').addEventListener('change', (e) => {
+    const ip = e.target.value;
+    if (ip) document.getElementById('radio-ip').value = ip;
+  });
+
+  document.getElementById('snap-tuning').addEventListener('change', async (e) => {
+    // Apply immediately — don't wait for Save Settings
+    await api.settings.save({ snapTuning: e.target.checked });
+    log(`Snap to 1kHz: ${e.target.checked ? 'ON' : 'OFF'}`);
+  });
+
+  // Save settings
+  document.getElementById('save-btn').addEventListener('click', async () => {
+    const actions = {};
+    BUTTON_SLOTS.forEach(slot => {
+      const sel = document.getElementById(`action-${slot.key}`);
+      if (sel) actions[slot.key] = sel.value;
+    });
+
+    const newSettings = {
+      radioIP:     document.getElementById('radio-ip').value.trim(),
+      stationName: document.getElementById('station-name').value.trim(),
+      snapTuning:  document.getElementById('snap-tuning').checked,
+      actions,
+    };
+
+    await api.settings.save(newSettings);
+    currentActions = actions;
+    log('Settings saved', 'ok');
+  });
+
+  // Reset
+  document.getElementById('reset-btn').addEventListener('click', () => {
+    buildAssignGrid();
+    log('Assignments reset to saved');
+  });
+}
+
+// ── Radio Hardware Listeners ──────────────────────────────────────────────────
+function setupRadioListeners() {
+  // RC-28
+  api.rc28.on('connected', () => {
+    setRC28Status('ok', 'Connected');
+    log('RC-28 connected', 'ok');
+  });
+  api.rc28.on('disconnected', () => {
+    setRC28Status('idle', 'Disconnected');
+    log('RC-28 disconnected', 'err');
+  });
+  api.rc28.on('error', (msg) => {
+    setRC28Status('error', 'Error');
+    log(`RC-28: ${msg}`, 'err');
+  });
+
+  api.rc28.on('ledSent', (msg) => {
+    log(`💡 ${msg}`);
+  });
+
+  // Flex
+  api.flex.on('connected', (ip) => {
+    flexConnected = true;
+    setFlexStatus('ok', ip);
+    document.getElementById('connect-btn').textContent = 'Disconnect';
+  });
+  api.flex.on('disconnected', () => {
+    flexConnected = false;
+    setFlexStatus('idle', 'Disconnected');
+    document.getElementById('connect-btn').textContent = 'Connect';
+    document.getElementById('freq-display').textContent = '– –– . –––';
+    document.getElementById('slice-mode').textContent = '–';
+  });
+  api.flex.on('error', (msg) => {
+    setFlexStatus('error', 'Error');
+    log(`Radio: ${msg}`, 'err');
+  });
+
+  api.flex.on('sliceUpdated', (slice) => {
+    updateFreqDisplay(slice);
+  });
+
+  api.flex.on('pttChanged', (on) => {
+    setBadge('badge-tx', on, 'tx-active');
+    if (on) log('TX', 'tx');
+  });
+
+  api.flex.on('radioFound', (radio) => {
+    if (!discoveredRadios[radio.ip]) {
+      discoveredRadios[radio.ip] = radio;
+      const sel = document.getElementById('discovered-select');
+      const opt = document.createElement('option');
+      opt.value = radio.ip;
+      opt.textContent = `${radio.name} (${radio.model}) – ${radio.ip}`;
+      sel.appendChild(opt);
+      document.getElementById('discovery-row').style.display = 'block';
+    }
+  });
+
+  // Controller
+  api.ctrl.on('dialMoved', async ({ steps, deltaHz, rate }) => {
+    // Immediately update display from current slice state
+    const slices = await api.flex.getSlices();
+    if (slices && slices.length > 0) updateFreqDisplay(slices[0]);
+  });
+
+  api.ctrl.on('ptt', (on) => {
+    setBadge('badge-tx', on, 'tx-active');
+  });
+
+  api.ctrl.on('pttLatch', (latched) => {
+    // Latched TX shows solid (not pulsing) to distinguish from momentary
+    const el = document.getElementById('badge-tx');
+    if (!el) return;
+    if (latched) {
+      el.className = 'badge tx-latched';
+      el.textContent = 'TX LATCH';
+      log('TX latched on — tap PTT to release', 'tx');
+    } else {
+      el.className = 'badge';
+      el.textContent = 'TX';
+    }
+  });
+
+  api.ctrl.on('tuneModeChanged', (rate) => {
+    setBadge('badge-fast', rate === 'fast');
+    log(`Tune rate: ${rate}`);
+  });
+
+  api.ctrl.on('dialLockChanged', (locked) => {
+    setBadge('badge-lock', locked);
+    log(locked ? 'Dial locked' : 'Dial unlocked');
+  });
+
+  api.ctrl.on('actionExecuted', ({ action, btn, type, value }) => {
+    const suffix = value ? ` → ${value}` : ` → ${action}`;
+    log(`${btn} ${type}${suffix}`);
+  });
+
+  api.ctrl.on('error', (msg) => {
+    log(`Error: ${msg}`, 'err');
+  });
+
+  api.flex.on('raw', (line) => {
+    log(`⬡ ${line}`, '');
+  });
+
+  api.flex.on('radioInfo', (info) => {
+    log(`Radio: ${JSON.stringify(info).slice(0, 80)}`, 'ok');
+  });
+}
+
+// ── Display Helpers ───────────────────────────────────────────────────────────
+function updateFreqDisplay(slice) {
+  const freq = slice.freq_mhz;
+  if (freq == null) return;
+
+  const mhz = freq.toFixed(6);
+  const parts = mhz.split('.');
+  const formatted = `${parts[0]}.${parts[1].slice(0,3)} ${parts[1].slice(3)}`;
+
+  const disp = document.getElementById('freq-display');
+  disp.classList.toggle('rit-mode', !!slice.rit_on);
+
+  if (slice.rit_on && slice.rit_freq != null && slice.rit_freq !== 0) {
+    const sign = slice.rit_freq > 0 ? '+' : '';
+    disp.textContent = `${formatted}  RIT ${sign}${slice.rit_freq} Hz`;
+  } else {
+    disp.textContent = `${formatted} MHz`;
+  }
+
+  document.getElementById('slice-mode').textContent =
+    `Slice ${slice.id !== undefined ? slice.id : '?'} · ${slice.mode || '–'}`;
+
+  setBadge('badge-rit', !!slice.rit_on);
+}
+
+function setRC28Status(state, text) {
+  const card = document.getElementById('rc28-card');
+  card.className = 'status-card ' + state;
+  document.getElementById('rc28-status').textContent = text;
+}
+
+function setFlexStatus(state, text) {
+  const card = document.getElementById('flex-card');
+  card.className = 'status-card ' + state;
+  document.getElementById('flex-status').textContent = text;
+}
+
+function setBadge(id, active, activeClass = 'active') {
+  const el = document.getElementById(id);
+  if (!el) return;
+  el.className = 'badge ' + (active ? activeClass : '');
+}
+
+// ── Log ───────────────────────────────────────────────────────────────────────
+function log(msg, type = '') {
+  const scroll = document.getElementById('log-scroll');
+  const now = new Date();
+  const ts = now.toTimeString().slice(0, 8);
+
+  const line = document.createElement('div');
+  line.className = `log-line ${type}`;
+  line.innerHTML = `<span class="ts">${ts}</span>  <span class="msg">${msg}</span>`;
+
+  scroll.appendChild(line);
+  scroll.scrollTop = scroll.scrollHeight;
+
+  // Keep max 50 lines
+  while (scroll.children.length > 50) {
+    scroll.removeChild(scroll.firstChild);
+  }
+}
+
+// ── Start ────────────────────────────────────────────────────────────────────
+init().catch(err => console.error(err));
+</script>
+</body>
+</html>
