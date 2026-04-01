@@ -209,4 +209,4 @@ SmartSDR TCP/IP API documented at [github.com/flexradio/smartsdr-api-docs](https
 
 ## Licence
 
-MIT
+GNU General Public License v3.0 — see [LICENSE](LICENSE) for details.
