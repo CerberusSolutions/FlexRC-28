@@ -1,6 +1,7 @@
 'use strict';
 
 const EventEmitter = require('events');
+const { MODE, modeId, modeName, tuneFloor, MODE_CYCLE } = require('./modes');
 
 // Default button action definitions
 const DEFAULT_ACTIONS = {
@@ -11,14 +12,24 @@ const DEFAULT_ACTIONS = {
   f2_hold:    'band_cycle',    // F2 hold = step through bands
 };
 
-// Tuning step sizes in Hz per velocity unit
-const TUNE_STEPS = {
-  slow: { hz: 10  },
-  fast: { hz: 100 },
-};
+// Mode groups — determines which velocity curve floor to use
+// Velocity curve — multipliers on top of mode's tuneFloor (defined in modes.js)
+const VELOCITY_MULTIPLIERS = [
+  { maxVelocity: 2,        mult: 1  },  // barely moving
+  { maxVelocity: 4,        mult: 2  },  // gentle
+  { maxVelocity: 7,        mult: 5  },  // medium
+  { maxVelocity: 11,       mult: 10 },  // fast
+  { maxVelocity: Infinity, mult: 20 },  // full spin
+];
 
-// Mode cycle order — press steps forward, wraps around
-const MODE_CYCLE = ['LSB', 'USB', 'CW', 'AM'];
+const FAST_MODE_MULTIPLIER = 5;
+
+function getStepHz(velocity, isFast, modeVal) {
+  const floor = tuneFloor(modeVal);  // modes.js handles int or string, any case
+  const entry = VELOCITY_MULTIPLIERS.find(e => Math.abs(velocity) <= e.maxVelocity);
+  const hz = floor * (entry ? entry.mult : 20);
+  return isFast ? hz * FAST_MODE_MULTIPLIER : hz;
+}
 
 // Band cycle — freq in MHz, auto mode, display label
 // Convention: LSB below 10MHz, USB above
@@ -52,6 +63,9 @@ class Controller extends EventEmitter {
     this._snapEnabled = false;
     this._weJustTuned = false;
     this._weJustTunedTimer = null;
+    this._snapSuppressUntil = 0;
+    this._lastSnapFreq = null;
+    this._lastSnapSlice = null;
 
     this._bindEvents();
   }
@@ -83,15 +97,26 @@ class Controller extends EventEmitter {
     this._snapEnabled = enabled;
   }
 
+  _suppressSnap(ms = 500) {
+    this._snapSuppressUntil = Date.now() + ms;
+  }
+
   _bindEvents() {
     // ── Dial ──
     this.rc28.on('dial', (steps, speed) => {
       if (this.dialLocked) return;
-      const hz = TUNE_STEPS[this.tuneRate].hz;
+
+      // Velocity-sensitive: step size scales with spin speed and current mode
+      // CW=10Hz floor, SSB=100Hz floor, AM/FM=500Hz floor
+      // F1 fast mode multiplies the entire curve by 5
+      const currentMode = this.flex.getActiveSlice()?.mode;  // integer from modes.js
+      const hz = getStepHz(speed, this.tuneRate === 'fast', currentMode);
       const deltaHz = steps * hz;
-      // Flag that WE are tuning so snap doesn't fire on our own dial updates
-      this._weJustTuned = true;
-      if (this._weJustTunedTimer) clearTimeout(this._weJustTunedTimer);
+
+    // Flag that WE are tuning so snap doesn't fire on our own dial updates
+    this._weJustTuned = true;
+    this._suppressSnap(800);
+    if (this._weJustTunedTimer) clearTimeout(this._weJustTunedTimer);
       this._weJustTunedTimer = setTimeout(() => {
         this._weJustTuned = false;
         this._weJustTunedTimer = null;
@@ -192,23 +217,73 @@ class Controller extends EventEmitter {
       }
 
       // Snap tuning — detect panadapter CLICKS vs mouse wheel/dial
-      // SmartSDR mouse wheel always lands on multiples of 10Hz (its minimum step)
-      // A panadapter click lands on arbitrary sub-Hz values
-      // So: if sub-10Hz remainder is non-zero → it was a click → snap it
+      // SmartSDR mouse wheel always lands on multiples of 10Hz
+      // A panadapter click can land on arbitrary sub-10Hz values
       if (this._snapEnabled && slice.freq_mhz && !this._weJustTuned) {
+        const now = Date.now();
+        if (now < this._snapSuppressUntil) return;
+
         const freqHz = Math.round(slice.freq_mhz * 1_000_000);
-        const sub10 = freqHz % 10;
-        const isClick = sub10 !== 0;  // wheel/dial always lands on 10Hz boundaries
+        const sub10 = Math.abs(freqHz % 10);
+        const isClick = sub10 !== 0;
+
         if (isClick) {
           const snapped = Math.round(freqHz / 1000) * 1000;
+
           if (freqHz !== snapped) {
             const snappedMHz = snapped / 1_000_000;
-            this.flex.sendCmd(`slice tune ${id} ${snappedMHz.toFixed(6)}`).catch(() => {});
-            this.emit('actionExecuted', { action: 'snap_khz', btn: 'auto', type: 'snap', value: `${snappedMHz.toFixed(3)} MHz` });
+
+            // Prevent repeated snap on our own follow-up status update
+            if (
+              this._lastSnapSlice === id &&
+              this._lastSnapFreq !== null &&
+              Math.abs(this._lastSnapFreq - snappedMHz) < 0.000001
+            ) {
+              return;
+            }
+
+            this._lastSnapSlice = id;
+            this._lastSnapFreq = snappedMHz;
+            this._suppressSnap(800);
+
+            this.flex.sendCmd(`slice tune ${id} ${snappedMHz.toFixed(6)}`)
+              .then(() => {
+                this.emit('actionExecuted', {
+                  action: 'snap_khz',
+                  btn: 'auto',
+                  type: 'snap',
+                  value: `${snappedMHz.toFixed(3)} MHz`
+                });
+              })
+              .catch((e) => {
+                this.emit('error', `Snap failed: ${e.message}`);
+              });
           }
         }
       }
     });
+  }
+
+  /**
+   * Snap slice frequency to the floor boundary of the given mode.
+   * Zeros digits below the new minimum step size.
+   * e.g. CW→USB (10Hz→100Hz floor): 14.149.083 → 14.149.100
+   */
+  _snapToModeFloor(slice, nextModeId) {
+    if (!slice || !slice.freq_mhz) return;
+    const newFloor = tuneFloor(nextModeId);
+
+    // Always snap to the new mode's floor boundary
+    // This zeros sub-floor digits when moving to a coarser mode (CW→USB, USB→AM)
+    // and is a no-op when already on a boundary or moving to a finer mode
+    const freqHz = Math.round(slice.freq_mhz * 1_000_000);
+    const snapped = Math.round(freqHz / newFloor) * newFloor;
+    if (snapped !== freqHz) {
+      const snappedMHz = snapped / 1_000_000;
+      slice.freq_mhz = snappedMHz;
+      this.flex.sendCmd(`slice tune ${slice.id} ${snappedMHz.toFixed(6)}`).catch(() => {});
+      this.flex.emit('sliceUpdated', slice.id, { ...slice });
+    }
   }
 
   _executeAction(action, btn, type) {
@@ -227,17 +302,18 @@ class Controller extends EventEmitter {
       case 'tune_mode': {
         this.tuneRate = this.tuneRate === 'slow' ? 'fast' : 'slow';
         this.rc28.setF1LED(this.tuneRate === 'fast');
-        // Snap to step boundary when switching rate
-        const stepHz = TUNE_STEPS[this.tuneRate].hz;
+
+        // Snap to current mode's floor boundary
+        // e.g. in USB (100Hz floor): 14.149.540 → 14.149.500
         const slice = this.flex.getActiveSlice();
         if (slice && slice.freq_mhz) {
+          const floor = tuneFloor(slice.mode);
           const freqHz = Math.round(slice.freq_mhz * 1_000_000);
-          const snapped = Math.round(freqHz / stepHz) * stepHz;
-          const snappedMHz = snapped / 1_000_000;
-          if (snappedMHz !== slice.freq_mhz) {
+          const snapped = Math.round(freqHz / floor) * floor;
+          if (snapped !== freqHz) {
+            const snappedMHz = snapped / 1_000_000;
             slice.freq_mhz = snappedMHz;
             this.flex.sendCmd(`slice tune ${slice.id} ${snappedMHz.toFixed(6)}`).catch(() => {});
-            // Update display immediately — don't wait for radio status response
             this.flex.emit('sliceUpdated', slice.id, { ...slice });
           }
         }
@@ -255,14 +331,20 @@ class Controller extends EventEmitter {
       case 'mode_cycle': {
         const slice = this.flex.getActiveSlice();
         if (!slice) break;
-        const currentMode = (slice.mode || 'USB').toUpperCase();
-        const idx = MODE_CYCLE.indexOf(currentMode);
-        const nextMode = MODE_CYCLE[(idx + 1) % MODE_CYCLE.length];
-        this.flex.setMode(slice.id, nextMode).catch((e) => {
+        const currentModeId = modeId(slice.mode);
+        const idx = MODE_CYCLE.indexOf(currentModeId);
+        const nextModeId = MODE_CYCLE[(idx + 1) % MODE_CYCLE.length];
+
+        // Snap frequency to the new mode's floor boundary
+        // e.g. switching from CW (10Hz floor) to USB (100Hz floor)
+        // zeros the sub-100Hz digits
+        this._snapToModeFloor(slice, nextModeId);
+
+        this.flex.setMode(slice.id, nextModeId).catch((e) => {
           this.emit('error', `Mode change failed: ${e.message}`);
         });
-        this.emit('actionExecuted', { action, btn, type, value: nextMode });
-        return; // skip default emit below
+        this.emit('actionExecuted', { action, btn, type, value: modeName(nextModeId) });
+        return;
       }
 
       case 'band_cycle': {

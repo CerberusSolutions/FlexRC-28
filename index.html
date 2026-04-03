@@ -521,6 +521,17 @@
 
 <script>
 // ── State ────────────────────────────────────────────────────────────────────
+// Mode integer IDs must match modes.js
+const MODE_NAMES = {
+  0:'LSB', 1:'USB', 2:'CW', 3:'AM', 4:'DIGU',
+  5:'DIGL', 6:'SAM', 7:'FM', 8:'NFM', 9:'DFM', 10:'RTTY'
+};
+function modeDisplay(val) {
+  if (val == null) return '–';
+  if (typeof val === 'number') return MODE_NAMES[val] || '–';
+  return String(val).toUpperCase();  // fallback for string
+}
+
 let settings = {};
 let availableActions = [];
 let currentActions = {};
@@ -793,7 +804,7 @@ function updateFreqDisplay(slice) {
   }
 
   document.getElementById('slice-mode').textContent =
-    `Slice ${slice.id !== undefined ? slice.id : '?'} · ${slice.mode || '–'}`;
+    `Slice ${slice.id !== undefined ? slice.id : '?'} · ${modeDisplay(slice.mode)}`;
 
   setBadge('badge-rit', !!slice.rit_on);
 }

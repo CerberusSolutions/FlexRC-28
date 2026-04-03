@@ -23,6 +23,8 @@
 const net = require('net');
 const EventEmitter = require('events');
 const dgram = require('dgram');
+//const { modeId, modeName } = require('./modes');
+const { modeId, modeName, tuneFloor } = require('./modes');
 
 const FLEX_PORT = 4992;
 const DISCOVERY_PORT = 4992;
@@ -209,6 +211,7 @@ class FlexRadio extends EventEmitter {
    * Tune the active slice by a number of Hz.
    * @param {number} deltaHz  Positive = up, negative = down
    */
+  /*
   async tune(deltaHz) {
     const slice = this._getActiveSlice();
     if (!slice) return;
@@ -220,12 +223,39 @@ class FlexRadio extends EventEmitter {
       if (!slice.freq_mhz) return;
       const newFreq = slice.freq_mhz + (deltaHz / 1_000_000);
       if (newFreq < 0.1 || newFreq > 60) return;
-      // Update cache immediately so rapid dial turns accumulate correctly
-      // The display will update when the radio's status response arrives
       slice.freq_mhz = newFreq;
       await this.sendCmd(`slice tune ${slice.id} ${newFreq.toFixed(6)}`);
     }
   }
+*/
+  async tune(deltaHz) {
+  const slice = this._getActiveSlice();
+  if (!slice) return;
+
+  if (slice.rit_on) {
+    const newRit = (slice.rit_freq || 0) + deltaHz;
+    await this.setRIT(slice.id, newRit);
+  } else {
+    if (!slice.freq_mhz) return;
+
+    const floorHz = tuneFloor(slice.mode);
+    let freqHz = Math.round(slice.freq_mhz * 1_000_000);
+
+    // Snap current frequency to the mode floor before applying wheel delta
+    const remainder = freqHz % floorHz;
+    if (remainder !== 0) {
+      freqHz = Math.round(freqHz / floorHz) * floorHz;
+    }
+
+    const newFreqHz = freqHz + deltaHz;
+    const newFreq = newFreqHz / 1_000_000;
+
+    if (newFreq < 0.1 || newFreq > 60) return;
+
+    slice.freq_mhz = newFreq;
+    await this.sendCmd(`slice tune ${slice.id} ${newFreq.toFixed(6)}`);
+  }
+}
 
   /**
    * Set slice frequency in MHz.
@@ -297,8 +327,8 @@ class FlexRadio extends EventEmitter {
   async setMode(sliceId, mode) {
     const slice = this._slices.get(sliceId);
     if (!slice) return;
-    slice.mode = mode;
-    await this.sendCmd(`slice set ${sliceId} mode=${mode}`);
+    slice.mode = modeId(mode);
+    await this.sendCmd(`slice set ${sliceId} mode=${modeName(slice.mode)}`);
     this.emit('sliceUpdated', sliceId, { ...slice });
   }
 
@@ -312,9 +342,9 @@ class FlexRadio extends EventEmitter {
     const slice = this._slices.get(sliceId);
     if (!slice) return;
     // Set mode first, then tune
-    slice.mode = mode;
+    slice.mode = modeId(mode);
     slice.freq_mhz = freqMHz;
-    await this.sendCmd(`slice set ${sliceId} mode=${mode}`);
+    await this.sendCmd(`slice set ${sliceId} mode=${modeName(slice.mode)}`);
     await this.sendCmd(`slice tune ${sliceId} ${freqMHz.toFixed(6)}`);
     this.emit('sliceUpdated', sliceId, { ...slice });
   }
@@ -453,7 +483,7 @@ class FlexRadio extends EventEmitter {
       const slice = this._slices.get(id);
 
       if (kv.RF_frequency !== undefined) slice.freq_mhz = parseFloat(kv.RF_frequency);
-      if (kv.mode         !== undefined) slice.mode = kv.mode;
+      if (kv.mode         !== undefined) slice.mode = modeId(kv.mode);  // normalise to integer
       if (kv.rit_on       !== undefined) slice.rit_on = kv.rit_on === '1';
       if (kv.rit_freq     !== undefined) slice.rit_freq = parseInt(kv.rit_freq, 10);
       if (kv.active       !== undefined && kv.active === '1') this._activeSlice = id;

@@ -1,6 +1,6 @@
 {
   "name": "flexrc-28",
-  "version": "1.0.1",
+  "version": "1.0.2",
   "description": "Icom RC-28 controller for FlexRadio SmartSDR",
   "main": "src/main.js",
   "author": "Cerberus Solutions",
