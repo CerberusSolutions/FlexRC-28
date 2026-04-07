@@ -22,7 +22,8 @@ class RC28 extends EventEmitter {
     this.device = null;
     this._buttonState = 0x07;
     this._buttonPressTime = {};
-    this._dialAccumulator = 0;
+    this._dialDetentAccumulator = 0;
+    this._dialVelocitySamples = [];
     this._dialTimer = null;
     this._connected = false;
     this._linkSolid = false;
@@ -124,14 +125,26 @@ class RC28 extends EventEmitter {
   }
 
   _handleDial(dir, speed) {
-    const steps = dir === 0x01 ? speed : -speed;
-    this._dialAccumulator += steps;
+    const detents = dir === 0x01 ? speed : -speed;
+    this._dialDetentAccumulator += detents;
+    this._dialVelocitySamples.push(Math.abs(speed));
     if (this._dialTimer) return;
     this._dialTimer = setTimeout(() => {
       this._dialTimer = null;
-      const total = this._dialAccumulator;
-      this._dialAccumulator = 0;
-      this.emit('dial', total, Math.abs(total));
+      const movementDetents = this._dialDetentAccumulator;
+      const samples = this._dialVelocitySamples;
+      this._dialDetentAccumulator = 0;
+      this._dialVelocitySamples = [];
+
+      const velocity = samples.length
+        ? samples.reduce((sum, val) => sum + val, 0) / samples.length
+        : 0;
+
+      this.emit('dial', {
+        detents: movementDetents,
+        velocity,
+        sampleCount: samples.length,
+      });
     }, 10);
   }
 
