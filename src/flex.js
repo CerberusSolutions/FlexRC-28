@@ -252,7 +252,12 @@ class FlexRadio extends EventEmitter {
 
     if (newFreq < 0.1 || newFreq > 60) return;
 
-    slice.freq_mhz = newFreq;
+    this.emit('pendingAction', {
+      type: 'tune',
+      sliceId: slice.id,
+      deltaHz,
+      targetFreqMHz: newFreq,
+    });
     await this.sendCmd(`slice tune ${slice.id} ${newFreq.toFixed(6)}`);
   }
 }
@@ -275,26 +280,23 @@ class FlexRadio extends EventEmitter {
     const slice = this._slices.get(sliceId);
     if (!slice) return;
     const clamped = Math.max(-9999, Math.min(9999, Math.round(hz)));
-    slice.rit_freq = clamped;
+    this.emit('pendingAction', { type: 'rit_freq', sliceId, hz: clamped });
     await this.sendCmd(`slice set ${sliceId} rit_freq=${clamped}`);
     this.emit('ritChanged', sliceId, clamped);
-    this.emit('sliceUpdated', sliceId, { ...slice });
   }
 
   async clearRIT(sliceId) {
+    this.emit('pendingAction', { type: 'rit_clear', sliceId });
     await this.sendCmd(`slice set ${sliceId} rit_freq=0`);
-    const slice = this._slices.get(sliceId);
-    if (slice) { slice.rit_freq = 0; this.emit('sliceUpdated', sliceId, { ...slice }); }
     this.emit('ritChanged', sliceId, 0);
   }
 
   async enableRIT(sliceId, enabled) {
     const slice = this._slices.get(sliceId);
     if (!slice) return;
-    slice.rit_on = enabled;
+    this.emit('pendingAction', { type: 'rit_mode', sliceId, enabled });
     await this.sendCmd(`slice set ${sliceId} rit_on=${enabled ? 1 : 0}`);
     this.emit('ritModeChanged', sliceId, enabled);
-    this.emit('sliceUpdated', sliceId, { ...slice });
   }
 
   // ── PTT ────────────────────────────────────────────────────────────────
@@ -315,7 +317,7 @@ class FlexRadio extends EventEmitter {
     const slice = this._getActiveSlice();
     if (!slice || !slice.freq_mhz) return;
     const snapped = Math.round(slice.freq_mhz * 1000) / 1000;
-    slice.freq_mhz = snapped;
+    this.emit('pendingAction', { type: 'snap_khz', sliceId: slice.id, targetFreqMHz: snapped });
     await this.sendCmd(`slice tune ${slice.id} ${snapped.toFixed(6)}`);
   }
 
@@ -327,9 +329,9 @@ class FlexRadio extends EventEmitter {
   async setMode(sliceId, mode) {
     const slice = this._slices.get(sliceId);
     if (!slice) return;
-    slice.mode = modeId(mode);
-    await this.sendCmd(`slice set ${sliceId} mode=${modeName(slice.mode)}`);
-    this.emit('sliceUpdated', sliceId, { ...slice });
+    const modeVal = modeId(mode);
+    this.emit('pendingAction', { type: 'mode_change', sliceId, mode: modeVal });
+    await this.sendCmd(`slice set ${sliceId} mode=${modeName(modeVal)}`);
   }
 
   /**
@@ -341,12 +343,11 @@ class FlexRadio extends EventEmitter {
   async changeBand(sliceId, freqMHz, mode) {
     const slice = this._slices.get(sliceId);
     if (!slice) return;
+    const modeVal = modeId(mode);
+    this.emit('pendingAction', { type: 'band_change', sliceId, mode: modeVal, targetFreqMHz: freqMHz });
     // Set mode first, then tune
-    slice.mode = modeId(mode);
-    slice.freq_mhz = freqMHz;
-    await this.sendCmd(`slice set ${sliceId} mode=${modeName(slice.mode)}`);
+    await this.sendCmd(`slice set ${sliceId} mode=${modeName(modeVal)}`);
     await this.sendCmd(`slice tune ${sliceId} ${freqMHz.toFixed(6)}`);
-    this.emit('sliceUpdated', sliceId, { ...slice });
   }
 
   // ── Slice Management ───────────────────────────────────────────────────
