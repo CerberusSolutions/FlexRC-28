@@ -499,6 +499,11 @@
           <span class="toggle-track"></span>
           Snap to 1kHz
         </label>
+        <label class="toggle-label">
+          <input type="checkbox" id="velocity-tuning" checked>
+          <span class="toggle-track"></span>
+          Velocity Tuning
+        </label>
       </div>
       <div class="save-row">
         <button class="btn btn-ghost" id="reset-btn">Reset</button>
@@ -556,6 +561,7 @@ async function init() {
   document.getElementById('radio-ip').value     = settings.radioIP     || '';
   document.getElementById('station-name').value = settings.stationName || '';
   document.getElementById('snap-tuning').checked = !!settings.snapTuning;
+  document.getElementById('velocity-tuning').checked = settings.velocityTuning !== false;
 
   buildAssignGrid();
   bindEvents();
@@ -644,6 +650,12 @@ function bindEvents() {
     log(`Snap to 1kHz: ${e.target.checked ? 'ON' : 'OFF'}`);
   });
 
+  document.getElementById('velocity-tuning').addEventListener('change', async (e) => {
+    // Apply immediately — don't wait for Save Settings
+    await api.settings.save({ velocityTuning: e.target.checked });
+    log(`Velocity tuning: ${e.target.checked ? 'ON' : 'OFF'}`);
+  });
+
   // Save settings
   document.getElementById('save-btn').addEventListener('click', async () => {
     const actions = {};
@@ -653,9 +665,10 @@ function bindEvents() {
     });
 
     const newSettings = {
-      radioIP:     document.getElementById('radio-ip').value.trim(),
-      stationName: document.getElementById('station-name').value.trim(),
-      snapTuning:  document.getElementById('snap-tuning').checked,
+      radioIP:        document.getElementById('radio-ip').value.trim(),
+      stationName:    document.getElementById('station-name').value.trim(),
+      snapTuning:     document.getElementById('snap-tuning').checked,
+      velocityTuning: document.getElementById('velocity-tuning').checked,
       actions,
     };
 
