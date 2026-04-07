@@ -23,6 +23,7 @@ function loadSettings() {
     stationName: '',
     actions: {},
     snapTuning: false,
+    velocityTuning: true,
   };
 }
 
@@ -92,6 +93,9 @@ function initHardware() {
 
   // Apply saved snap setting
   controller.setSnap(!!settings.snapTuning);
+
+  // Apply saved velocity setting (default on for new installs)
+  controller.setVelocity(settings.velocityTuning !== false);
 
   // ── RC-28 events → renderer ──
   rc28.on('connected', (info) => {
@@ -233,6 +237,10 @@ ipcMain.handle('settings:save', (_, newSettings) => {
 
   if (newSettings.snapTuning !== undefined) {
     controller.setSnap(!!newSettings.snapTuning);
+  }
+
+  if (newSettings.velocityTuning !== undefined) {
+    controller.setVelocity(!!newSettings.velocityTuning);
   }
 
   return settings;

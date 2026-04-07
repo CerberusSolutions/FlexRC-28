@@ -23,10 +23,6 @@ const VELOCITY_MULTIPLIERS = [
 ];
 
 const FAST_MODE_MULTIPLIER = 5;
-const VELOCITY_HYSTERESIS = 0.5;
-const EXTERNAL_SNAP_DEBOUNCE_MS = 120;
-const MIN_SNAP_DISTANCE_HZ = 120;
-const CLICK_JUMP_MIN_HZ = 200;
 
 function getStepHz(velocity, isFast, modeVal) {
   const floor = tuneFloor(modeVal);  // modes.js handles int or string, any case
@@ -35,28 +31,9 @@ function getStepHz(velocity, isFast, modeVal) {
   return isFast ? hz * FAST_MODE_MULTIPLIER : hz;
 }
 
-function selectVelocityBucket(absVelocity, lastIndex = null) {
-  if (lastIndex === null || lastIndex === undefined) {
-    return VELOCITY_MULTIPLIERS.findIndex(e => absVelocity <= e.maxVelocity);
-  }
-
-  let idx = lastIndex;
-
-  while (
-    idx < VELOCITY_MULTIPLIERS.length - 1 &&
-    absVelocity > (VELOCITY_MULTIPLIERS[idx].maxVelocity + VELOCITY_HYSTERESIS)
-  ) {
-    idx += 1;
-  }
-
-  while (
-    idx > 0 &&
-    absVelocity < (VELOCITY_MULTIPLIERS[idx - 1].maxVelocity - VELOCITY_HYSTERESIS)
-  ) {
-    idx -= 1;
-  }
-
-  return idx;
+function getFlatStepHz(isFast, modeVal) {
+  const floor = tuneFloor(modeVal);
+  return isFast ? floor * FAST_MODE_MULTIPLIER : floor;
 }
 
 // Band cycle — freq in MHz, auto mode, display label
@@ -89,17 +66,12 @@ class Controller extends EventEmitter {
     this._pttPressTime = 0;
     this._pttLatchTimer = null;
     this._snapEnabled = false;
+    this._velocityEnabled = true;
     this._weJustTuned = false;
     this._weJustTunedTimer = null;
     this._snapSuppressUntil = 0;
     this._lastSnapFreq = null;
     this._lastSnapSlice = null;
-    this._pendingLocalUntil = 0;
-    this._pendingLocalReason = null;
-    this._lastVelocityBucket = null;
-    this._lastSliceTelemetry = new Map();
-    this._pendingSnapTimers = new Map();
-    this._localPendingBySlice = new Map();
 
     this._bindEvents();
   }
@@ -131,57 +103,33 @@ class Controller extends EventEmitter {
     this._snapEnabled = enabled;
   }
 
+  setVelocity(enabled) {
+    this._velocityEnabled = enabled;
+  }
+
   _suppressSnap(ms = 500) {
     this._snapSuppressUntil = Date.now() + ms;
   }
 
-  _markLocalCommand(reason, ms = 700) {
-    this._pendingLocalUntil = Date.now() + ms;
-    this._pendingLocalReason = reason;
-  }
-
-  _traceTuneDecision(details) {
-    this.emit('tuneTrace', details);
-    this.emit('log', `[tune] ${JSON.stringify(details)}`);
-  }
-
   _bindEvents() {
     // ── Dial ──
-    this.rc28.on('dial', (dial) => {
+    this.rc28.on('dial', (steps, speed) => {
       if (this.dialLocked) return;
-      const detents = typeof dial === 'object' && dial !== null ? (dial.detents || 0) : (dial || 0);
-      const velocity = typeof dial === 'object' && dial !== null ? (dial.velocity || 0) : 0;
-      const absVelocity = Math.abs(velocity);
 
       // Velocity-sensitive: step size scales with spin speed and current mode
       // CW=10Hz floor, SSB=100Hz floor, AM/FM=500Hz floor
       // F1 fast mode multiplies the entire curve by 5
+      // When velocity is disabled, use flat step (floor * fast multiplier only)
       const currentMode = this.flex.getActiveSlice()?.mode;  // integer from modes.js
-      const bucket = selectVelocityBucket(absVelocity, this._lastVelocityBucket);
-      this._lastVelocityBucket = bucket;
-      const bucketVelocity = VELOCITY_MULTIPLIERS[bucket]?.maxVelocity ?? absVelocity;
-      const stepHz = getStepHz(bucketVelocity, this.tuneRate === 'fast', currentMode);
-      const deltaHz = detents * stepHz;
+      const hz = this._velocityEnabled
+        ? getStepHz(speed, this.tuneRate === 'fast', currentMode)
+        : getFlatStepHz(this.tuneRate === 'fast', currentMode);
+      const deltaHz = steps * hz;
 
-      this._traceTuneDecision({
-        source: 'dial',
-        detents,
-        velocity,
-        selectedBucket: bucket,
-        stepHz,
-        deltaHz,
-        suppression: {
-          weJustTuned: this._weJustTuned,
-          pendingLocalUntil: this._pendingLocalUntil,
-          snapSuppressUntil: this._snapSuppressUntil,
-        },
-      });
-
-      // Flag that WE are tuning so snap doesn't fire on our own dial updates
-      this._weJustTuned = true;
-      this._markLocalCommand('dial_tune', 900);
-      this._suppressSnap(800);
-      if (this._weJustTunedTimer) clearTimeout(this._weJustTunedTimer);
+    // Flag that WE are tuning so snap doesn't fire on our own dial updates
+    this._weJustTuned = true;
+    this._suppressSnap(800);
+    if (this._weJustTunedTimer) clearTimeout(this._weJustTunedTimer);
       this._weJustTunedTimer = setTimeout(() => {
         this._weJustTuned = false;
         this._weJustTunedTimer = null;
@@ -189,7 +137,7 @@ class Controller extends EventEmitter {
       this.flex.tune(deltaHz).catch((e) => {
         this.emit('error', `Tune failed: ${e.message}`);
       });
-      this.emit('dialMoved', detents, deltaHz, this.tuneRate);
+      this.emit('dialMoved', steps, deltaHz, this.tuneRate);
     });
 
     // ── Button Down ──
@@ -275,149 +223,56 @@ class Controller extends EventEmitter {
       this.emit('linkStatus', 'disconnected');
     });
 
-    this.flex.on('pendingAction', (action) => {
-      if (action && action.sliceId !== undefined) {
-        const targetFreqHz = Number.isFinite(action.targetFreqMHz)
-          ? Math.round(action.targetFreqMHz * 1_000_000)
-          : null;
-        this._localPendingBySlice.set(action.sliceId, {
-          until: Date.now() + 1400,
-          reason: action.type || 'pending_action',
-          targetFreqHz,
-        });
-        this._markLocalCommand(action.type || 'pending_action', 1100);
-      }
-      this.emit('pendingAction', action);
-    });
-
     // F2 LED mirrors RIT state from radio
     this.flex.on('sliceUpdated', (id, slice) => {
       if (slice.rit_on !== undefined) {
         this.rc28.setF2LED(!!slice.rit_on);
       }
 
-      if (this._snapEnabled && slice.freq_mhz) {
+      // Snap tuning — detect panadapter CLICKS vs mouse wheel/dial
+      // SmartSDR mouse wheel always lands on multiples of 10Hz
+      // A panadapter click can land on arbitrary sub-10Hz values
+      if (this._snapEnabled && slice.freq_mhz && !this._weJustTuned) {
         const now = Date.now();
+        if (now < this._snapSuppressUntil) return;
+
         const freqHz = Math.round(slice.freq_mhz * 1_000_000);
-        const localPending = this._localPendingBySlice.get(id);
-        if (localPending && now < localPending.until) {
-          const matchesTarget = (
-            localPending.targetFreqHz === null ||
-            Math.abs(localPending.targetFreqHz - freqHz) <= 1500
-          );
-          if (matchesTarget) {
-            this._traceTuneDecision({
-              source: 'sliceUpdated',
-              freqHz,
-              snapReason: 'suppressed_local_pending',
-              suppression: localPending,
-            });
-            return;
-          }
-        }
+        const sub10 = Math.abs(freqHz % 10);
+        const isClick = sub10 !== 0;
 
-        const suppressed = (
-          this._weJustTuned ||
-          now < this._snapSuppressUntil ||
-          now < this._pendingLocalUntil
-        );
-        if (suppressed) {
-          this._traceTuneDecision({
-            source: 'sliceUpdated',
-            freqMHz: slice.freq_mhz,
-            suppression: {
-              weJustTuned: this._weJustTuned,
-              snapSuppressUntil: this._snapSuppressUntil,
-              pendingLocalUntil: this._pendingLocalUntil,
-              pendingLocalReason: this._pendingLocalReason,
-            },
-            snapReason: 'suppressed',
-          });
-          return;
-        }
-
-        const prev = this._lastSliceTelemetry.get(id);
-        this._lastSliceTelemetry.set(id, { freqHz, at: now });
-
-        const jumpHz = prev ? Math.abs(freqHz - prev.freqHz) : 0;
-        const elapsedMs = prev ? (now - prev.at) : null;
-        const isFineResolutionLanding = Math.abs(freqHz % 10) !== 0;
-        const isLikelyClick = !!prev && jumpHz >= CLICK_JUMP_MIN_HZ && isFineResolutionLanding;
-
-        if (!isLikelyClick) {
-          this._traceTuneDecision({
-            source: 'sliceUpdated',
-            freqHz,
-            jumpHz,
-            elapsedMs,
-            isFineResolutionLanding,
-            snapReason: 'not_click_signature',
-          });
-          return;
-        }
-
-        if (this._pendingSnapTimers.has(id)) {
-          clearTimeout(this._pendingSnapTimers.get(id));
-        }
-
-        const timer = setTimeout(() => {
-          this._pendingSnapTimers.delete(id);
-          const latest = this._lastSliceTelemetry.get(id);
-          if (!latest || latest.freqHz !== freqHz) return;
-
+        if (isClick) {
           const snapped = Math.round(freqHz / 1000) * 1000;
-          const snapDistanceHz = Math.abs(freqHz - snapped);
-          if (snapDistanceHz < MIN_SNAP_DISTANCE_HZ) {
-            this._traceTuneDecision({
-              source: 'sliceUpdated',
-              freqHz,
-              snapped,
-              snapDistanceHz,
-              snapReason: 'too_close_to_boundary',
-            });
-            return;
-          }
-          if (freqHz === snapped) return;
 
-          const snappedMHz = snapped / 1_000_000;
-          if (
-            this._lastSnapSlice === id &&
-            this._lastSnapFreq !== null &&
-            Math.abs(this._lastSnapFreq - snappedMHz) < 0.000001
-          ) {
-            return;
-          }
+          if (freqHz !== snapped) {
+            const snappedMHz = snapped / 1_000_000;
 
-          this._lastSnapSlice = id;
-          this._lastSnapFreq = snappedMHz;
-          this._markLocalCommand('auto_snap', 900);
-          this._suppressSnap(800);
-          this._traceTuneDecision({
-            source: 'sliceUpdated',
-            freqHz,
-            snapped,
-            snapDistanceHz,
-            snapReason: 'auto_snap_execute',
-            suppression: {
-              pendingLocalUntil: this._pendingLocalUntil,
-              snapSuppressUntil: this._snapSuppressUntil,
-            },
-          });
+            // Prevent repeated snap on our own follow-up status update
+            if (
+              this._lastSnapSlice === id &&
+              this._lastSnapFreq !== null &&
+              Math.abs(this._lastSnapFreq - snappedMHz) < 0.000001
+            ) {
+              return;
+            }
 
-          this.flex.sendCmd(`slice tune ${id} ${snappedMHz.toFixed(6)}`)
-            .then(() => {
-              this.emit('actionExecuted', {
-                action: 'snap_khz',
-                btn: 'auto',
-                type: 'snap',
-                value: `${snappedMHz.toFixed(3)} MHz`
+            this._lastSnapSlice = id;
+            this._lastSnapFreq = snappedMHz;
+            this._suppressSnap(800);
+
+            this.flex.sendCmd(`slice tune ${id} ${snappedMHz.toFixed(6)}`)
+              .then(() => {
+                this.emit('actionExecuted', {
+                  action: 'snap_khz',
+                  btn: 'auto',
+                  type: 'snap',
+                  value: `${snappedMHz.toFixed(3)} MHz`
+                });
+              })
+              .catch((e) => {
+                this.emit('error', `Snap failed: ${e.message}`);
               });
-            })
-            .catch((e) => {
-              this.emit('error', `Snap failed: ${e.message}`);
-            });
-        }, EXTERNAL_SNAP_DEBOUNCE_MS);
-        this._pendingSnapTimers.set(id, timer);
+          }
+        }
       }
     });
   }
@@ -438,8 +293,9 @@ class Controller extends EventEmitter {
     const snapped = Math.round(freqHz / newFloor) * newFloor;
     if (snapped !== freqHz) {
       const snappedMHz = snapped / 1_000_000;
-      this._markLocalCommand('mode_floor_snap', 900);
+      slice.freq_mhz = snappedMHz;
       this.flex.sendCmd(`slice tune ${slice.id} ${snappedMHz.toFixed(6)}`).catch(() => {});
+      this.flex.emit('sliceUpdated', slice.id, { ...slice });
     }
   }
 
@@ -469,8 +325,9 @@ class Controller extends EventEmitter {
           const snapped = Math.round(freqHz / floor) * floor;
           if (snapped !== freqHz) {
             const snappedMHz = snapped / 1_000_000;
-            this._markLocalCommand('tune_mode_floor_snap', 900);
+            slice.freq_mhz = snappedMHz;
             this.flex.sendCmd(`slice tune ${slice.id} ${snappedMHz.toFixed(6)}`).catch(() => {});
+            this.flex.emit('sliceUpdated', slice.id, { ...slice });
           }
         }
         this.emit('tuneModeChanged', this.tuneRate);
