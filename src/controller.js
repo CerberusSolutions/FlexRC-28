@@ -99,6 +99,7 @@ class Controller extends EventEmitter {
     this._lastVelocityBucket = null;
     this._lastSliceTelemetry = new Map();
     this._pendingSnapTimers = new Map();
+    this._localPendingBySlice = new Map();
 
     this._bindEvents();
   }
@@ -275,6 +276,17 @@ class Controller extends EventEmitter {
     });
 
     this.flex.on('pendingAction', (action) => {
+      if (action && action.sliceId !== undefined) {
+        const targetFreqHz = Number.isFinite(action.targetFreqMHz)
+          ? Math.round(action.targetFreqMHz * 1_000_000)
+          : null;
+        this._localPendingBySlice.set(action.sliceId, {
+          until: Date.now() + 1400,
+          reason: action.type || 'pending_action',
+          targetFreqHz,
+        });
+        this._markLocalCommand(action.type || 'pending_action', 1100);
+      }
       this.emit('pendingAction', action);
     });
 
@@ -286,6 +298,24 @@ class Controller extends EventEmitter {
 
       if (this._snapEnabled && slice.freq_mhz) {
         const now = Date.now();
+        const freqHz = Math.round(slice.freq_mhz * 1_000_000);
+        const localPending = this._localPendingBySlice.get(id);
+        if (localPending && now < localPending.until) {
+          const matchesTarget = (
+            localPending.targetFreqHz === null ||
+            Math.abs(localPending.targetFreqHz - freqHz) <= 1500
+          );
+          if (matchesTarget) {
+            this._traceTuneDecision({
+              source: 'sliceUpdated',
+              freqHz,
+              snapReason: 'suppressed_local_pending',
+              suppression: localPending,
+            });
+            return;
+          }
+        }
+
         const suppressed = (
           this._weJustTuned ||
           now < this._snapSuppressUntil ||
@@ -306,13 +336,13 @@ class Controller extends EventEmitter {
           return;
         }
 
-        const freqHz = Math.round(slice.freq_mhz * 1_000_000);
         const prev = this._lastSliceTelemetry.get(id);
         this._lastSliceTelemetry.set(id, { freqHz, at: now });
 
         const jumpHz = prev ? Math.abs(freqHz - prev.freqHz) : 0;
         const elapsedMs = prev ? (now - prev.at) : null;
-        const isLikelyClick = !!prev && jumpHz >= CLICK_JUMP_MIN_HZ;
+        const isFineResolutionLanding = Math.abs(freqHz % 10) !== 0;
+        const isLikelyClick = !!prev && jumpHz >= CLICK_JUMP_MIN_HZ && isFineResolutionLanding;
 
         if (!isLikelyClick) {
           this._traceTuneDecision({
@@ -320,6 +350,7 @@ class Controller extends EventEmitter {
             freqHz,
             jumpHz,
             elapsedMs,
+            isFineResolutionLanding,
             snapReason: 'not_click_signature',
           });
           return;
