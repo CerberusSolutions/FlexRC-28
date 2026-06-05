@@ -504,6 +504,11 @@
           <span class="toggle-track"></span>
           Velocity Tuning
         </label>
+        <label class="toggle-label">
+          <input type="checkbox" id="reduced-sensitivity">
+          <span class="toggle-track"></span>
+          Reduce Sensitivity
+        </label>
       </div>
       <div class="save-row">
         <button class="btn btn-ghost" id="reset-btn">Reset</button>
@@ -562,6 +567,7 @@ async function init() {
   document.getElementById('station-name').value = settings.stationName || '';
   document.getElementById('snap-tuning').checked = !!settings.snapTuning;
   document.getElementById('velocity-tuning').checked = settings.velocityTuning !== false;
+  document.getElementById('reduced-sensitivity').checked = !!settings.reducedTuning;
 
   buildAssignGrid();
   bindEvents();
@@ -663,6 +669,12 @@ function bindEvents() {
     log(`Velocity tuning: ${e.target.checked ? 'ON' : 'OFF'}`);
   });
 
+  document.getElementById('reduced-sensitivity').addEventListener('change', async (e) => {
+    // Apply immediately — don't wait for Save Settings
+    await api.settings.save({ reducedTuning: e.target.checked });
+    log(`Reduce sensitivity: ${e.target.checked ? 'ON' : 'OFF'}`);
+  });
+
   // Save settings
   document.getElementById('save-btn').addEventListener('click', async () => {
     const actions = {};
@@ -676,6 +688,7 @@ function bindEvents() {
       stationName:    document.getElementById('station-name').value.trim(),
       snapTuning:     document.getElementById('snap-tuning').checked,
       velocityTuning: document.getElementById('velocity-tuning').checked,
+      reducedTuning:  document.getElementById('reduced-sensitivity').checked,
       actions,
     };
 

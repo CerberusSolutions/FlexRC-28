@@ -44,6 +44,7 @@ function loadSettings() {
     actions: {},
     snapTuning: false,
     velocityTuning: true,
+    reducedTuning: false,
   };
 }
 
@@ -116,6 +117,10 @@ function initHardware() {
 
   // Apply saved velocity setting (default on for new installs)
   controller.setVelocity(settings.velocityTuning !== false);
+  // Apply saved reduced-sensitivity setting
+  if (typeof controller.setReducedSensitivity === 'function') {
+    controller.setReducedSensitivity(!!settings.reducedTuning);
+  }
 
   // ── RC-28 events → renderer ──
   rc28.on('connected', (info) => {
@@ -261,6 +266,10 @@ ipcMain.handle('settings:save', (_, newSettings) => {
 
   if (newSettings.snapTuning !== undefined && controller) {
     controller.setSnap(!!newSettings.snapTuning);
+  }
+
+  if (newSettings.reducedTuning !== undefined && controller) {
+    if (typeof controller.setReducedSensitivity === 'function') controller.setReducedSensitivity(!!newSettings.reducedTuning);
   }
 
   if (newSettings.velocityTuning !== undefined && controller) {

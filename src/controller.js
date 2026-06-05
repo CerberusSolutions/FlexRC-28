@@ -73,6 +73,8 @@ class Controller extends EventEmitter {
     this._lastSnapFreq = null;
     this._lastSnapSlice = null;
     this._dialEndTimer = null;
+    this._dialStepBuffer = 0;
+    this._reducedSensitivity = false;
 
     this._bindEvents();
   }
@@ -108,6 +110,12 @@ class Controller extends EventEmitter {
     this._velocityEnabled = enabled;
   }
 
+  setReducedSensitivity(enabled) {
+    this._reducedSensitivity = !!enabled;
+    // Reset buffer when toggling off to avoid unexpected jumps
+    if (!this._reducedSensitivity) this._dialStepBuffer = 0;
+  }
+
   _suppressSnap(ms = 500) {
     this._snapSuppressUntil = Date.now() + ms;
   }
@@ -125,20 +133,35 @@ class Controller extends EventEmitter {
       const hz = this._velocityEnabled
         ? getStepHz(speed, this.tuneRate === 'fast', currentMode)
         : getFlatStepHz(this.tuneRate === 'fast', currentMode);
-      const deltaHz = steps * hz;
 
-    // Flag that WE are tuning so snap doesn't fire on our own dial updates
-    this._weJustTuned = true;
-    this._suppressSnap(800);
-    if (this._weJustTunedTimer) clearTimeout(this._weJustTunedTimer);
-      this._weJustTunedTimer = setTimeout(() => {
-        this._weJustTuned = false;
-        this._weJustTunedTimer = null;
-      }, 1000);
-      this.flex.tune(deltaHz).catch((e) => {
-        this.emit('error', `Tune failed: ${e.message}`);
-      });
-      this.emit('dialMoved', steps, deltaHz, this.tuneRate);
+      // Support reduced sensitivity by buffering physical steps and only
+      // applying one tune-step per two physical steps (2x less sensitive).
+      let applySteps = steps;
+      if (this._reducedSensitivity) {
+        this._dialStepBuffer += steps;
+        applySteps = Math.trunc(this._dialStepBuffer / 2);
+        // keep remainder in buffer
+        this._dialStepBuffer -= applySteps * 2;
+      }
+
+      if (applySteps === 0) {
+        // nothing to apply yet
+      } else {
+        const deltaHz = applySteps * hz;
+
+        // Flag that WE are tuning so snap doesn't fire on our own dial updates
+        this._weJustTuned = true;
+        this._suppressSnap(800);
+        if (this._weJustTunedTimer) clearTimeout(this._weJustTunedTimer);
+        this._weJustTunedTimer = setTimeout(() => {
+          this._weJustTuned = false;
+          this._weJustTunedTimer = null;
+        }, 1000);
+        this.flex.tune(deltaHz).catch((e) => {
+          this.emit('error', `Tune failed: ${e.message}`);
+        });
+        this.emit('dialMoved', applySteps, deltaHz, this.tuneRate);
+      }
 
       // Debounce dial end — after user stops turning, optionally snap to 1kHz
       if (this._dialEndTimer) clearTimeout(this._dialEndTimer);
