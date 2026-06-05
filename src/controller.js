@@ -74,7 +74,7 @@ class Controller extends EventEmitter {
     this._lastSnapSlice = null;
     this._dialEndTimer = null;
     this._dialStepBuffer = 0;
-    this._reducedSensitivity = false;
+    this._reducedSensitivityLevel = 1; // 1 = normal, >1 = require N physical steps per tune step
 
     this._bindEvents();
   }
@@ -110,10 +110,10 @@ class Controller extends EventEmitter {
     this._velocityEnabled = enabled;
   }
 
-  setReducedSensitivity(enabled) {
-    this._reducedSensitivity = !!enabled;
-    // Reset buffer when toggling off to avoid unexpected jumps
-    if (!this._reducedSensitivity) this._dialStepBuffer = 0;
+  setReducedSensitivityLevel(level) {
+    const lvl = Math.max(1, Math.trunc(Number(level) || 1));
+    this._reducedSensitivityLevel = lvl;
+    if (lvl === 1) this._dialStepBuffer = 0; // reset buffer when disabling
   }
 
   _suppressSnap(ms = 500) {
@@ -137,11 +137,12 @@ class Controller extends EventEmitter {
       // Support reduced sensitivity by buffering physical steps and only
       // applying one tune-step per two physical steps (2x less sensitive).
       let applySteps = steps;
-      if (this._reducedSensitivity) {
+      if (this._reducedSensitivityLevel > 1) {
+        const lvl = this._reducedSensitivityLevel;
         this._dialStepBuffer += steps;
-        applySteps = Math.trunc(this._dialStepBuffer / 2);
+        applySteps = Math.trunc(this._dialStepBuffer / lvl);
         // keep remainder in buffer
-        this._dialStepBuffer -= applySteps * 2;
+        this._dialStepBuffer -= applySteps * lvl;
       }
 
       if (applySteps === 0) {

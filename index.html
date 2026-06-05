@@ -504,10 +504,10 @@
           <span class="toggle-track"></span>
           Velocity Tuning
         </label>
-        <label class="toggle-label">
-          <input type="checkbox" id="reduced-sensitivity">
+        <label class="toggle-label" title="Reduce sensitivity: higher values require more physical steps per tune increment.">
+          <input type="range" id="reduced-sensitivity" min="1" max="5" value="1" step="1">
           <span class="toggle-track"></span>
-          Reduce Sensitivity
+          Reduce Sensitivity <span id="reduced-sensitivity-val" style="margin-left:6px;font-family:var(--mono);">1x</span>
         </label>
       </div>
       <div class="save-row">
@@ -567,7 +567,8 @@ async function init() {
   document.getElementById('station-name').value = settings.stationName || '';
   document.getElementById('snap-tuning').checked = !!settings.snapTuning;
   document.getElementById('velocity-tuning').checked = settings.velocityTuning !== false;
-  document.getElementById('reduced-sensitivity').checked = !!settings.reducedTuning;
+  document.getElementById('reduced-sensitivity').value = settings.reducedTuningLevel || 1;
+  document.getElementById('reduced-sensitivity-val').textContent = (settings.reducedTuningLevel || 1) + 'x';
 
   buildAssignGrid();
   bindEvents();
@@ -669,10 +670,12 @@ function bindEvents() {
     log(`Velocity tuning: ${e.target.checked ? 'ON' : 'OFF'}`);
   });
 
-  document.getElementById('reduced-sensitivity').addEventListener('change', async (e) => {
-    // Apply immediately — don't wait for Save Settings
-    await api.settings.save({ reducedTuning: e.target.checked });
-    log(`Reduce sensitivity: ${e.target.checked ? 'ON' : 'OFF'}`);
+  document.getElementById('reduced-sensitivity').addEventListener('input', async (e) => {
+    // Apply immediately — save numeric level (1=no reduction, 5=max reduction)
+    const lvl = Number(e.target.value) || 1;
+    await api.settings.save({ reducedTuningLevel: lvl });
+    document.getElementById('reduced-sensitivity-val').textContent = `${lvl}x`;
+    log(`Sensitivity reduction: ${lvl}x`);
   });
 
   // Save settings
@@ -688,7 +691,7 @@ function bindEvents() {
       stationName:    document.getElementById('station-name').value.trim(),
       snapTuning:     document.getElementById('snap-tuning').checked,
       velocityTuning: document.getElementById('velocity-tuning').checked,
-      reducedTuning:  document.getElementById('reduced-sensitivity').checked,
+      reducedTuningLevel:  Number(document.getElementById('reduced-sensitivity').value) || 1,
       actions,
     };
 
