@@ -72,6 +72,7 @@ class Controller extends EventEmitter {
     this._snapSuppressUntil = 0;
     this._lastSnapFreq = null;
     this._lastSnapSlice = null;
+    this._dialEndTimer = null;
 
     this._bindEvents();
   }
@@ -138,6 +139,34 @@ class Controller extends EventEmitter {
         this.emit('error', `Tune failed: ${e.message}`);
       });
       this.emit('dialMoved', steps, deltaHz, this.tuneRate);
+
+      // Debounce dial end — after user stops turning, optionally snap to 1kHz
+      if (this._dialEndTimer) clearTimeout(this._dialEndTimer);
+      this._dialEndTimer = setTimeout(async () => {
+        this._dialEndTimer = null;
+        if (!this._snapEnabled) return;
+        if (this.dialLocked) return;
+        const slice = this.flex.getActiveSlice();
+        if (!slice || !slice.freq_mhz) return;
+
+        const freqHz = Math.round(slice.freq_mhz * 1_000_000);
+        const snapped = Math.round(freqHz / 1000) * 1000;
+        if (snapped === freqHz) return;
+
+        const snappedMHz = snapped / 1_000_000;
+        this._suppressSnap(800);
+        try {
+          await this.flex.sendCmd(`slice tune ${slice.id} ${snappedMHz.toFixed(6)}`);
+          this.emit('actionExecuted', {
+            action: 'snap_khz',
+            btn: 'dial',
+            type: 'snap',
+            value: `${snappedMHz.toFixed(3)} MHz`
+          });
+        } catch (e) {
+          this.emit('error', `Snap failed: ${e.message}`);
+        }
+      }, 600);
     });
 
     // ── Button Down ──
