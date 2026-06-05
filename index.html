@@ -392,6 +392,69 @@
   input:checked + .toggle-track { background: rgba(0,170,255,0.2); border-color: var(--accent); }
   input:checked + .toggle-track::after { left: 18px; background: var(--accent); }
 
+  /* Range slider tick marks container */
+  :root { --range-thumb-w: 14px; }
+  .range-wrap {
+    position: relative;
+    width: 120px;
+    display: inline-block;
+    transform: translateY(-6px); /* lift slider up slightly to align with labels */
+  }
+  /* make slider full-width of wrapper so ticks align exactly */
+  .range-wrap input[type=range] {
+    width: 100%;
+    -webkit-appearance: none;
+    height: 12px;
+    background: transparent;
+    padding: 0;
+    margin: 0;
+    display: block;
+  }
+  .range-wrap input[type=range]::-webkit-slider-runnable-track {
+    height: 6px;
+    background: var(--panel);
+    border-radius: 4px;
+    border: 1px solid var(--border);
+  }
+  .range-wrap input[type=range]::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    width: var(--range-thumb-w);
+    height: var(--range-thumb-w);
+    border-radius: 50%;
+    background: var(--accent);
+    margin-top: -5px; /* lift thumb to center between lines (tweak) */
+  }
+  .range-ticks {
+    position: absolute;
+    /* shrink and offset the tick container by half the thumb width so
+       percent positions correspond to the thumb center at extremes */
+    left: calc(var(--range-thumb-w) / 2);
+    width: calc(100% - var(--range-thumb-w));
+    top: calc(100% + 4px); /* place ticks below the track */
+    height: 6px;
+    pointer-events: none;
+  }
+  .range-ticks span {
+    position: absolute;
+    top: 0;
+    width: 2px;
+    height: 6px;
+    background: var(--border);
+    opacity: 0.95;
+    border-radius: 1px;
+    transform: translateX(-50%);
+  }
+  .range-ticks span:nth-child(1)  { left: 0%; }
+  .range-ticks span:nth-child(2)  { left: 11.111111%; }
+  .range-ticks span:nth-child(3)  { left: 22.222222%; }
+  .range-ticks span:nth-child(4)  { left: 33.333333%; }
+  .range-ticks span:nth-child(5)  { left: 44.444444%; }
+  .range-ticks span:nth-child(6)  { left: 55.555556%; }
+  .range-ticks span:nth-child(7)  { left: 66.666667%; }
+  .range-ticks span:nth-child(8)  { left: 77.777778%; }
+  .range-ticks span:nth-child(9)  { left: 88.888889%; }
+  .range-ticks span:nth-child(10) { left: 100%; }
+
   /* ── Save row ── */
   .save-row {
     display: flex;
@@ -494,27 +557,37 @@
         <!-- Populated by JS -->
       </div>
       <div class="options-row">
-        <label class="toggle-label">
+        <label class="toggle-label" title="When enabled, clicks in the panadapter snap to the nearest 1 kHz.">
           <input type="checkbox" id="snap-tuning">
           <span class="toggle-track"></span>
           Snap to 1kHz
         </label>
-        <label class="toggle-label">
+        <label class="toggle-label" title="Velocity Tuning: enable variable step sizes based on turn speed.">
           <input type="checkbox" id="velocity-tuning" checked>
           <span class="toggle-track"></span>
           Velocity Tuning
         </label>
-        <label class="toggle-label" title="Tuning Sensitivity: slide right for finer/faster tuning, left for coarse/less sensitive tuning">
-          <input type="range" id="tuning-sensitivity" min="1" max="5" value="5" step="1" list="tickmarks">
-          <span class="toggle-track"></span>
+        <label class="toggle-label" title="Tuning Sensitivity: slide right for faster tuning, left for slower tuning">
+          <div class="range-wrap">
+            <input type="range" id="tuning-sensitivity" min="1" max="10" value="10" step="1" list="tickmarks">
+            <datalist id="tickmarks">
+              <option value="1"></option>
+              <option value="2"></option>
+              <option value="3"></option>
+              <option value="4"></option>
+              <option value="5"></option>
+              <option value="6"></option>
+              <option value="7"></option>
+              <option value="8"></option>
+              <option value="9"></option>
+              <option value="10"></option>
+            </datalist>
+            <div class="range-ticks" id="tuning-ticks">
+              <span></span><span></span><span></span><span></span><span></span>
+              <span></span><span></span><span></span><span></span><span></span>
+            </div>
+          </div>
           Tuning Sensitivity
-          <datalist id="tickmarks">
-            <option value="1"></option>
-            <option value="2"></option>
-            <option value="3"></option>
-            <option value="4"></option>
-            <option value="5"></option>
-          </datalist>
         </label>
       </div>
       <div class="save-row">
@@ -575,7 +648,7 @@ async function init() {
   document.getElementById('snap-tuning').checked = !!settings.snapTuning;
   document.getElementById('velocity-tuning').checked = settings.velocityTuning !== false;
   // tuningSensitivityLevel: 1 (least sensitive/most reduction) .. 5 (most sensitive)
-  document.getElementById('tuning-sensitivity').value = settings.tuningSensitivityLevel || settings.reducedTuningLevel || 5;
+  document.getElementById('tuning-sensitivity').value = settings.tuningSensitivityLevel || settings.reducedTuningLevel || 10;
 
   buildAssignGrid();
   bindEvents();
@@ -678,8 +751,8 @@ function bindEvents() {
   });
 
   document.getElementById('tuning-sensitivity').addEventListener('input', async (e) => {
-    // Apply immediately — save numeric sensitivity level (1..5)
-    const lvl = Number(e.target.value) || 5;
+    // Apply immediately — save numeric sensitivity level (1..10)
+    const lvl = Number(e.target.value) || 10;
     await api.settings.save({ tuningSensitivityLevel: lvl });
     log(`Tuning sensitivity: ${lvl}`);
   });
