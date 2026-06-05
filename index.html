@@ -504,10 +504,17 @@
           <span class="toggle-track"></span>
           Velocity Tuning
         </label>
-        <label class="toggle-label" title="Reduce sensitivity: higher values require more physical steps per tune increment.">
-          <input type="range" id="reduced-sensitivity" min="1" max="5" value="1" step="1">
+        <label class="toggle-label" title="Tuning Sensitivity: slide right for finer/faster tuning, left for coarse/less sensitive tuning">
+          <input type="range" id="tuning-sensitivity" min="1" max="5" value="5" step="1" list="tickmarks">
           <span class="toggle-track"></span>
-          Reduce Sensitivity <span id="reduced-sensitivity-val" style="margin-left:6px;font-family:var(--mono);">1x</span>
+          Tuning Sensitivity
+          <datalist id="tickmarks">
+            <option value="1"></option>
+            <option value="2"></option>
+            <option value="3"></option>
+            <option value="4"></option>
+            <option value="5"></option>
+          </datalist>
         </label>
       </div>
       <div class="save-row">
@@ -567,8 +574,8 @@ async function init() {
   document.getElementById('station-name').value = settings.stationName || '';
   document.getElementById('snap-tuning').checked = !!settings.snapTuning;
   document.getElementById('velocity-tuning').checked = settings.velocityTuning !== false;
-  document.getElementById('reduced-sensitivity').value = settings.reducedTuningLevel || 1;
-  document.getElementById('reduced-sensitivity-val').textContent = (settings.reducedTuningLevel || 1) + 'x';
+  // tuningSensitivityLevel: 1 (least sensitive/most reduction) .. 5 (most sensitive)
+  document.getElementById('tuning-sensitivity').value = settings.tuningSensitivityLevel || settings.reducedTuningLevel || 5;
 
   buildAssignGrid();
   bindEvents();
@@ -670,12 +677,11 @@ function bindEvents() {
     log(`Velocity tuning: ${e.target.checked ? 'ON' : 'OFF'}`);
   });
 
-  document.getElementById('reduced-sensitivity').addEventListener('input', async (e) => {
-    // Apply immediately — save numeric level (1=no reduction, 5=max reduction)
-    const lvl = Number(e.target.value) || 1;
-    await api.settings.save({ reducedTuningLevel: lvl });
-    document.getElementById('reduced-sensitivity-val').textContent = `${lvl}x`;
-    log(`Sensitivity reduction: ${lvl}x`);
+  document.getElementById('tuning-sensitivity').addEventListener('input', async (e) => {
+    // Apply immediately — save numeric sensitivity level (1..5)
+    const lvl = Number(e.target.value) || 5;
+    await api.settings.save({ tuningSensitivityLevel: lvl });
+    log(`Tuning sensitivity: ${lvl}`);
   });
 
   // Save settings
@@ -691,7 +697,7 @@ function bindEvents() {
       stationName:    document.getElementById('station-name').value.trim(),
       snapTuning:     document.getElementById('snap-tuning').checked,
       velocityTuning: document.getElementById('velocity-tuning').checked,
-      reducedTuningLevel:  Number(document.getElementById('reduced-sensitivity').value) || 1,
+      tuningSensitivityLevel:  Number(document.getElementById('tuning-sensitivity').value) || 5,
       actions,
     };
 

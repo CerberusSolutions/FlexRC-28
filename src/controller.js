@@ -116,6 +116,18 @@ class Controller extends EventEmitter {
     if (lvl === 1) this._dialStepBuffer = 0; // reset buffer when disabling
   }
 
+  /**
+   * Accept a user-facing tuning sensitivity level 1..5 where 5 is most sensitive.
+   * Internally we use a divisor (physical steps per tune step) so map accordingly.
+   */
+  setTuningSensitivityLevel(userLevel) {
+    const lvl = Math.max(1, Math.min(5, Math.trunc(Number(userLevel) || 5)));
+    // Map: userLevel 5 -> divisor 1 (apply every physical step)
+    //      userLevel 1 -> divisor 5 (apply once every 5 physical steps)
+    const divisor = Math.max(1, 6 - lvl);
+    this.setReducedSensitivityLevel(divisor);
+  }
+
   _suppressSnap(ms = 500) {
     this._snapSuppressUntil = Date.now() + ms;
   }
