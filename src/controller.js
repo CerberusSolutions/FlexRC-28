@@ -121,10 +121,10 @@ class Controller extends EventEmitter {
    * Internally we use a divisor (physical steps per tune step) so map accordingly.
    */
   setTuningSensitivityLevel(userLevel) {
-    const lvl = Math.max(1, Math.min(5, Math.trunc(Number(userLevel) || 5)));
-    // Map: userLevel 5 -> divisor 1 (apply every physical step)
-    //      userLevel 1 -> divisor 5 (apply once every 5 physical steps)
-    const divisor = Math.max(1, 6 - lvl);
+    const lvl = Math.max(1, Math.min(10, Math.trunc(Number(userLevel) || 10)));
+    // Map: userLevel 10 -> divisor 1 (apply every physical step)
+    //      userLevel 1  -> divisor 10 (apply once every 10 physical steps)
+    const divisor = Math.max(1, 11 - lvl);
     this.setReducedSensitivityLevel(divisor);
   }
 

@@ -44,7 +44,7 @@ function loadSettings() {
     actions: {},
     snapTuning: false,
     velocityTuning: true,
-    tuningSensitivityLevel: 5,
+    tuningSensitivityLevel: 10,
   };
 }
 
@@ -119,7 +119,7 @@ function initHardware() {
   controller.setVelocity(settings.velocityTuning !== false);
     // Apply saved tuning sensitivity level
     if (typeof controller.setTuningSensitivityLevel === 'function') {
-      controller.setTuningSensitivityLevel(settings.tuningSensitivityLevel || settings.reducedTuningLevel || 5);
+      controller.setTuningSensitivityLevel(settings.tuningSensitivityLevel || settings.reducedTuningLevel || 10);
   }
 
   // ── RC-28 events → renderer ──
@@ -269,7 +269,7 @@ ipcMain.handle('settings:save', (_, newSettings) => {
   }
 
   if (newSettings.tuningSensitivityLevel !== undefined && controller) {
-    if (typeof controller.setTuningSensitivityLevel === 'function') controller.setTuningSensitivityLevel(Number(newSettings.tuningSensitivityLevel) || 5);
+    if (typeof controller.setTuningSensitivityLevel === 'function') controller.setTuningSensitivityLevel(Number(newSettings.tuningSensitivityLevel) || 10);
   }
 
   if (newSettings.velocityTuning !== undefined && controller) {
