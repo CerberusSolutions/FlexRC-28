@@ -567,6 +567,13 @@ async function init() {
   bindEvents();
   setupRadioListeners();
 
+  // Refresh controller info when main process signals hardware ready
+  api.app.on('ready', async () => {
+    availableActions = await api.ctrl.getAvailableActions();
+    currentActions   = await api.ctrl.getActions();
+    buildAssignGrid();
+  });
+
   // Check current connection states
   const rc28Ok   = await api.rc28.isConnected();
   const flexOk   = await api.flex.isConnected();

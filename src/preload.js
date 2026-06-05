@@ -33,4 +33,7 @@ contextBridge.exposeInMainWorld('api', {
     getAvailableActions: () => ipcRenderer.invoke('ctrl:getAvailableActions'),
     on: (event, cb) => ipcRenderer.on(`ctrl:${event}`, (_, data) => cb(data)),
   },
+  app: {
+    on: (event, cb) => ipcRenderer.on(`app:${event}`, (_, data) => cb(data)),
+  },
 });
