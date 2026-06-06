@@ -675,6 +675,7 @@ let discoveredRadios = {};
 let flexConnected = false;
 let currentTuneRate = 'slow';
 let currentUserTuningStep = null;
+let autoConnectAttempted = false;
 const TUNING_STEP_VALUES = [1,5,10,50,100];
 
 const BUTTON_SLOTS = [
@@ -970,6 +971,28 @@ function setupRadioListeners() {
       opt.textContent = `${radio.name} (${radio.model}) – ${radio.ip}`;
       sel.appendChild(opt);
       document.getElementById('discovery-row').style.display = 'block';
+
+      // If exactly one radio is discovered at startup, auto-select and connect.
+      // Only attempt this once to avoid surprising the user when more radios appear later.
+      try {
+        const count = Object.keys(discoveredRadios).length;
+        if (count === 1 && !autoConnectAttempted && !flexConnected) {
+          // select it in the UI
+          sel.value = radio.ip;
+          document.getElementById('radio-ip').value = radio.ip;
+          if (radio.name) document.getElementById('station-name').value = radio.name;
+
+          // small defer so UI updates before triggering connection
+          setTimeout(() => {
+            const connectBtn = document.getElementById('connect-btn');
+            if (connectBtn) connectBtn.click();
+          }, 100);
+
+          autoConnectAttempted = true;
+        }
+      } catch (e) {
+        // non-fatal; ignore
+      }
     }
   });
 
