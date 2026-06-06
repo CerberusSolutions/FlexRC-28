@@ -1000,11 +1000,9 @@ function setupRadioListeners() {
   api.ctrl.on('dialMoved', async ({ steps, deltaHz, rate, predictedFreqHz }) => {
     // Do not overwrite user-selected tuning-step. Keep it authoritative.
     // Immediately update display from current slice state and log debug info
-    const slices = await api.flex.getSlices();
-    if (slices && slices.length > 0) {
-      const slice = slices[0];
+    const slice = await api.flex.getActiveSlice();
+    if (slice) {
       updateFreqDisplay(slice);
-      // intentional: suppress per-dial debug logging to activity window
     }
   });
 

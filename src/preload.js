@@ -17,6 +17,7 @@ contextBridge.exposeInMainWorld('api', {
     disconnect:     ()               => ipcRenderer.invoke('flex:disconnect'),
     isConnected:    ()               => ipcRenderer.invoke('flex:isConnected'),
     getSlices:      ()               => ipcRenderer.invoke('flex:getSlices'),
+    getActiveSlice: ()               => ipcRenderer.invoke('flex:getActiveSlice'),
     setActiveSlice: (id)             => ipcRenderer.invoke('flex:setActiveSlice', id),
     on: (event, cb) => ipcRenderer.on(`flex:${event}`, (_, data) => cb(data)),
   },

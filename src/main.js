@@ -261,6 +261,8 @@ ipcMain.handle('flex:setActiveSlice', (_, sliceId) => {
   if (flex) flex.setActiveSlice(sliceId);
 });
 
+ipcMain.handle('flex:getActiveSlice', () => (flex ? flex.getActiveSlice() : null));
+
 // Settings
 ipcMain.handle('settings:load', () => settings);
 
