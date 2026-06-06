@@ -231,7 +231,13 @@ class Controller extends EventEmitter {
 
         const snappedMHz = snapped / 1_000_000;
         this._suppressSnap(800);
+        // Update local slice cache and emit an immediate sliceUpdated so the
+        // UI reflects the snapped frequency without waiting for radio status.
         try {
+          slice.freq_mhz = snappedMHz;
+          this._lastSnapSlice = slice.id;
+          this._lastSnapFreq = snappedMHz;
+          this.flex.emit('sliceUpdated', slice.id, { ...slice });
           await this.flex.sendCmd(`slice tune ${slice.id} ${snappedMHz.toFixed(6)}`);
           this.emit('actionExecuted', {
             action: 'snap_khz',
@@ -364,6 +370,13 @@ class Controller extends EventEmitter {
             this._lastSnapFreq = snappedMHz;
             this._suppressSnap(800);
 
+            // Update local slice cache and emit immediate update so UI shows
+            // the snapped frequency right away, then tell radio to tune.
+            const slice = this.flex._slices.get(id);
+            if (slice) {
+              slice.freq_mhz = snappedMHz;
+              this.flex.emit('sliceUpdated', id, { ...slice });
+            }
             this.flex.sendCmd(`slice tune ${id} ${snappedMHz.toFixed(6)}`)
               .then(() => {
                 this.emit('actionExecuted', {
