@@ -62,10 +62,10 @@ let settings = loadSettings();
 
 function createWindow() {
   win = new BrowserWindow({
-    width: 560,
-    height: 680,
-    minWidth: 480,
-    minHeight: 600,
+    width: 720,
+    height: 760,
+    minWidth: 600,
+    minHeight: 700,
     frame: false,
     titleBarStyle: 'hidden',
     titleBarOverlay: {
@@ -121,6 +121,10 @@ function initHardware() {
     if (typeof controller.setTuningSensitivityLevel === 'function') {
       controller.setTuningSensitivityLevel(settings.tuningSensitivityLevel || settings.reducedTuningLevel || 10);
   }
+  // Apply saved tuning step override if present
+  if (settings.tuningStepOverride !== undefined && settings.tuningStepOverride !== null) {
+    if (typeof controller.setTuningStepOverride === 'function') controller.setTuningStepOverride(Number(settings.tuningStepOverride) || null);
+  }
 
   // ── RC-28 events → renderer ──
   rc28.on('connected', (info) => {
@@ -161,8 +165,8 @@ function initHardware() {
   });
 
   // ── Controller events → renderer ──
-  controller.on('dialMoved', (steps, deltaHz, rate) => {
-    send('ctrl:dialMoved', { steps, deltaHz, rate });
+  controller.on('dialMoved', (steps, deltaHz, rate, predictedFreqHz) => {
+    send('ctrl:dialMoved', { steps, deltaHz, rate, predictedFreqHz });
   });
 
   controller.on('ptt', (on) => {
@@ -187,6 +191,10 @@ function initHardware() {
 
   controller.on('error', (msg) => {
     send('ctrl:error', msg);
+  });
+
+  controller.on('tuningStepChanged', (val) => {
+    send('ctrl:tuningStepChanged', val);
   });
 
   controller.on('linkStatus', (status) => {
@@ -275,6 +283,10 @@ ipcMain.handle('settings:save', (_, newSettings) => {
   if (newSettings.velocityTuning !== undefined && controller) {
     controller.setVelocity(!!newSettings.velocityTuning);
   }
+  if (newSettings.tuningStepOverride !== undefined && controller) {
+    if (newSettings.tuningStepOverride === null) controller.setTuningStepOverride(null);
+    else if (typeof controller.setTuningStepOverride === 'function') controller.setTuningStepOverride(Number(newSettings.tuningStepOverride) || null);
+  }
 
   return settings;
 });
@@ -282,6 +294,11 @@ ipcMain.handle('settings:save', (_, newSettings) => {
 // Controller info
 ipcMain.handle('ctrl:getActions', () => (controller ? controller.getActions() : {}));
 ipcMain.handle('ctrl:getAvailableActions', () => (controller ? controller.getAvailableActions() : []));
+ipcMain.handle('ctrl:setTuningStep', (_, hz) => {
+  if (controller && typeof controller.setTuningStepOverride === 'function') {
+    controller.setTuningStepOverride(hz);
+  }
+});
 
 // Util
 function send(channel, data) {

@@ -228,7 +228,12 @@ class FlexRadio extends EventEmitter {
     }
   }
 */
-  async tune(deltaHz) {
+  /**
+   * Tune the active slice by a number of Hz.
+   * @param {number} deltaHz  Positive = up, negative = down
+   * @param {object} [opts]   Optional settings: { floorHzOverride: number }
+   */
+  async tune(deltaHz, opts = {}) {
   const slice = this._getActiveSlice();
   if (!slice) return;
 
@@ -237,23 +242,31 @@ class FlexRadio extends EventEmitter {
     await this.setRIT(slice.id, newRit);
   } else {
     if (!slice.freq_mhz) return;
+      // Allow caller to override the floor used for snapping (useful when
+      // a user has selected a custom per-step value). If not provided,
+      // use the canonical mode floor from modes.js
+      const floorHz = (opts && typeof opts.floorHzOverride === 'number' && opts.floorHzOverride > 0)
+        ? Math.trunc(opts.floorHzOverride)
+        : tuneFloor(slice.mode);
 
-    const floorHz = tuneFloor(slice.mode);
-    let freqHz = Math.round(slice.freq_mhz * 1_000_000);
+      let freqHz = Math.round(slice.freq_mhz * 1_000_000);
 
-    // Snap current frequency to the mode floor before applying wheel delta
-    const remainder = freqHz % floorHz;
-    if (remainder !== 0) {
-      freqHz = Math.round(freqHz / floorHz) * floorHz;
-    }
+      // Snap current frequency to the chosen floor before applying wheel delta
+      const remainder = freqHz % floorHz;
+      if (remainder !== 0) {
+        freqHz = Math.round(freqHz / floorHz) * floorHz;
+      }
 
-    const newFreqHz = freqHz + deltaHz;
-    const newFreq = newFreqHz / 1_000_000;
+      const newFreqHz = freqHz + deltaHz;
+      const newFreq = newFreqHz / 1_000_000;
 
-    if (newFreq < 0.1 || newFreq > 60) return;
+      if (newFreq < 0.1 || newFreq > 60) return;
 
-    slice.freq_mhz = newFreq;
-    await this.sendCmd(`slice tune ${slice.id} ${newFreq.toFixed(6)}`);
+      slice.freq_mhz = newFreq;
+      // Emit an immediate sliceUpdated so the UI can reflect the requested
+      // frequency without waiting for the radio status round-trip.
+      this.emit('sliceUpdated', slice.id, { ...slice });
+      await this.sendCmd(`slice tune ${slice.id} ${newFreq.toFixed(6)}`);
   }
 }
 

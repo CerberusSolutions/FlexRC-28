@@ -31,6 +31,7 @@ contextBridge.exposeInMainWorld('api', {
   ctrl: {
     getActions:          () => ipcRenderer.invoke('ctrl:getActions'),
     getAvailableActions: () => ipcRenderer.invoke('ctrl:getAvailableActions'),
+    setTuningStep:       (hz) => ipcRenderer.invoke('ctrl:setTuningStep', hz),
     on: (event, cb) => ipcRenderer.on(`ctrl:${event}`, (_, data) => cb(data)),
   },
   app: {

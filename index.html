@@ -332,7 +332,7 @@
     min-height: 80px;
   }
   .log-scroll {
-    height: 80px;
+    height: 240px;
     overflow-y: auto;
     scrollbar-width: thin;
     scrollbar-color: var(--border) transparent;
@@ -455,6 +455,15 @@
   .range-ticks span:nth-child(9)  { left: 88.888889%; }
   .range-ticks span:nth-child(10) { left: 100%; }
 
+  /* Compact range used for tuning-step (fewer ticks, narrower) */
+  .compact-range { width: 90px; }
+  .compact-range .range-ticks span { height: 6px; }
+  .compact-range .range-ticks span:nth-child(1) { left: 0%; }
+  .compact-range .range-ticks span:nth-child(2) { left: 25%; }
+  .compact-range .range-ticks span:nth-child(3) { left: 50%; }
+  .compact-range .range-ticks span:nth-child(4) { left: 75%; }
+  .compact-range .range-ticks span:nth-child(5) { left: 100%; }
+
   /* ── Save row ── */
   .save-row {
     display: flex;
@@ -567,6 +576,18 @@
           <span class="toggle-track"></span>
           Velocity Tuning
         </label>
+        <label class="toggle-label" title="Tuning Step: choose base per-encoder-step Hz">
+          <div style="display:flex;align-items:center;gap:8px;">
+            <div class="range-wrap compact-range">
+              <input type="range" id="tuning-step-range" min="0" max="4" step="1" value="4" />
+              <div class="range-ticks">
+                <span></span><span></span><span></span><span></span><span></span>
+              </div>
+            </div>
+            <div id="tuning-step-val" style="width:52px; text-align:right; font-family:var(--mono); color:var(--text);">100 Hz</div>
+          </div>
+          Tuning Step
+        </label>
         <label class="toggle-label" title="Tuning Sensitivity: slide right for faster tuning, left for slower tuning">
           <div class="range-wrap">
             <input type="range" id="tuning-sensitivity" min="1" max="10" value="10" step="1" list="tickmarks">
@@ -622,11 +643,39 @@ function modeDisplay(val) {
   return String(val).toUpperCase();  // fallback for string
 }
 
+// Mirror of src/modes.js tuneFloor mapping so renderer can show step sizes
+const FAST_MODE_MULTIPLIER = 5;
+function tuneFloor(val) {
+  const m = (typeof val === 'number') ? val : (val == null ? null : String(val).toUpperCase());
+  // mapping by mode name when string passed
+  const FLOOR = {
+    'CW': 10,
+    'LSB': 100,
+    'USB': 100,
+    'DIGU': 100,
+    'DIGL': 100,
+    'RTTY': 100,
+    'SAM': 100,
+    'AM': 500,
+    'FM': 500,
+    'NFM': 500,
+    'DFM': 500,
+  };
+  if (typeof val === 'number') {
+    // try to map numeric id using MODE_NAMES
+    return FLOOR[MODE_NAMES[val]] || 100;
+  }
+  return FLOOR[m] || 100;
+}
+
 let settings = {};
 let availableActions = [];
 let currentActions = {};
 let discoveredRadios = {};
 let flexConnected = false;
+let currentTuneRate = 'slow';
+let currentUserTuningStep = null;
+const TUNING_STEP_VALUES = [1,5,10,50,100];
 
 const BUTTON_SLOTS = [
   { key: 'ptt_press',  label: 'PTT Press'  },
@@ -649,6 +698,20 @@ async function init() {
   document.getElementById('velocity-tuning').checked = settings.velocityTuning !== false;
   // tuningSensitivityLevel: 1 (least sensitive/most reduction) .. 5 (most sensitive)
   document.getElementById('tuning-sensitivity').value = settings.tuningSensitivityLevel || settings.reducedTuningLevel || 10;
+
+  // initialize tuning-step display from current slice/mode
+  // initialize tuning-step range from saved settings (persisted) or default
+  try {
+    const tuningRange = document.getElementById('tuning-step-range');
+    const tuningVal = document.getElementById('tuning-step-val');
+    const saved = settings.tuningStepOverride;
+    const initHz = (saved !== undefined && saved !== null) ? Number(saved) : 100;
+    let idx = TUNING_STEP_VALUES.indexOf(initHz);
+    if (idx === -1) idx = TUNING_STEP_VALUES.length - 1; // default to 100
+    if (tuningRange) tuningRange.value = idx;
+    if (tuningVal) tuningVal.textContent = `${TUNING_STEP_VALUES[idx]} Hz`;
+  } catch (e) {}
+  try { refreshTuningStep(); } catch (e) {}
 
   buildAssignGrid();
   bindEvents();
@@ -757,6 +820,68 @@ function bindEvents() {
     log(`Tuning sensitivity: ${lvl}`);
   });
 
+  // Make tuning-sensitivity adjustable with mouse wheel when over the control
+  const sensEl = document.getElementById('tuning-sensitivity');
+  if (sensEl) {
+    sensEl.addEventListener('wheel', (e) => {
+      e.preventDefault();
+      const dir = e.deltaY < 0 ? 1 : -1;
+      const min = Number(sensEl.min);
+      const max = Number(sensEl.max);
+      const step = Number(sensEl.step) || 1;
+      let val = Number(sensEl.value) || 0;
+      val = Math.max(min, Math.min(max, val + dir * step));
+      if (val !== Number(sensEl.value)) {
+        sensEl.value = val;
+        sensEl.dispatchEvent(new Event('input', { bubbles: true }));
+        sensEl.dispatchEvent(new Event('change', { bubbles: true }));
+      }
+    }, { passive: false });
+  }
+
+  // Tuning step override — discrete range control
+  const tuningRange = document.getElementById('tuning-step-range');
+  const tuningVal = document.getElementById('tuning-step-val');
+  function updateTuningValDisplay(idx) {
+    const hz = TUNING_STEP_VALUES[Math.max(0, Math.min(TUNING_STEP_VALUES.length-1, Number(idx)))] || 100;
+    if (tuningVal) tuningVal.textContent = `${hz} Hz`;
+    return hz;
+  }
+  if (tuningRange) {
+    // live preview while sliding
+    tuningRange.addEventListener('input', (e) => updateTuningValDisplay(e.target.value));
+
+    // commit on change: set controller override and persist setting
+    tuningRange.addEventListener('change', async (e) => {
+      const idx = Number(e.target.value);
+      const hz = updateTuningValDisplay(idx);
+      currentUserTuningStep = hz;
+      try {
+        await api.ctrl.setTuningStep(hz);
+        await api.settings.save({ tuningStepOverride: hz });
+      } catch (err) {
+        log(`Failed to set tuning step: ${err && err.message ? err.message : String(err)}`, 'err');
+      }
+    });
+
+    // Mouse wheel support: adjust slider with wheel and prevent page scrolling
+    tuningRange.addEventListener('wheel', (e) => {
+      // Only handle vertical wheel; prevent default scrolling when over control
+      e.preventDefault();
+      const dir = e.deltaY < 0 ? 1 : -1; // wheel up -> increase
+      const min = Number(tuningRange.min);
+      const max = Number(tuningRange.max);
+      const step = Number(tuningRange.step) || 1;
+      let val = Number(tuningRange.value) || 0;
+      val = Math.max(min, Math.min(max, val + dir * step));
+      if (val !== Number(tuningRange.value)) {
+        tuningRange.value = val;
+        tuningRange.dispatchEvent(new Event('input', { bubbles: true }));
+        tuningRange.dispatchEvent(new Event('change', { bubbles: true }));
+      }
+    }, { passive: false });
+  }
+
   // Save settings
   document.getElementById('save-btn').addEventListener('click', async () => {
     const actions = {};
@@ -771,6 +896,7 @@ function bindEvents() {
       snapTuning:     document.getElementById('snap-tuning').checked,
       velocityTuning: document.getElementById('velocity-tuning').checked,
       tuningSensitivityLevel:  Number(document.getElementById('tuning-sensitivity').value) || 5,
+      tuningStepOverride: currentUserTuningStep === null ? undefined : Number(currentUserTuningStep),
       actions,
     };
 
@@ -826,6 +952,8 @@ function setupRadioListeners() {
 
   api.flex.on('sliceUpdated', (slice) => {
     updateFreqDisplay(slice);
+    // refresh tuning-step when slice/mode changes
+    try { refreshTuningStep(); } catch (e) {}
   });
 
   api.flex.on('pttChanged', (on) => {
@@ -846,10 +974,15 @@ function setupRadioListeners() {
   });
 
   // Controller
-  api.ctrl.on('dialMoved', async ({ steps, deltaHz, rate }) => {
-    // Immediately update display from current slice state
+  api.ctrl.on('dialMoved', async ({ steps, deltaHz, rate, predictedFreqHz }) => {
+    // Do not overwrite user-selected tuning-step. Keep it authoritative.
+    // Immediately update display from current slice state and log debug info
     const slices = await api.flex.getSlices();
-    if (slices && slices.length > 0) updateFreqDisplay(slices[0]);
+    if (slices && slices.length > 0) {
+      const slice = slices[0];
+      updateFreqDisplay(slice);
+      // intentional: suppress per-dial debug logging to activity window
+    }
   });
 
   api.ctrl.on('ptt', (on) => {
@@ -872,7 +1005,15 @@ function setupRadioListeners() {
 
   api.ctrl.on('tuneModeChanged', (rate) => {
     setBadge('badge-fast', rate === 'fast');
+    currentTuneRate = rate === 'fast' ? 'fast' : 'slow';
+    try { refreshTuningStep(); } catch (e) {}
     log(`Tune rate: ${rate}`);
+  });
+
+  // Controller tuning step override notifications
+  api.ctrl.on('tuningStepChanged', (val) => {
+    currentUserTuningStep = val || null;
+    log(val ? `Tuning step set to ${val} Hz` : 'Tuning step cleared');
   });
 
   api.ctrl.on('dialLockChanged', (locked) => {
@@ -934,6 +1075,21 @@ function setFlexStatus(state, text) {
   const card = document.getElementById('flex-card');
   card.className = 'status-card ' + state;
   document.getElementById('flex-status').textContent = text;
+}
+
+// Refresh the tuning-step input based on current slice mode and tune rate
+async function refreshTuningStep() {
+  try {
+    const slices = await api.flex.getSlices();
+    if (!slices || slices.length === 0) return;
+    const slice = slices[0];
+    if (!slice || slice.mode === undefined) return;
+    const floor = tuneFloor(slice.mode);
+    const step = (currentTuneRate === 'fast') ? floor * FAST_MODE_MULTIPLIER : floor;
+    // Do not overwrite the user's tuning-step input. We only compute here.
+  } catch (e) {
+    // ignore
+  }
 }
 
 function setBadge(id, active, activeClass = 'active') {

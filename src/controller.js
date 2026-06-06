@@ -24,15 +24,15 @@ const VELOCITY_MULTIPLIERS = [
 
 const FAST_MODE_MULTIPLIER = 5;
 
-function getStepHz(velocity, isFast, modeVal) {
-  const floor = tuneFloor(modeVal);  // modes.js handles int or string, any case
+function getStepHz(velocity, isFast, modeVal, userFloor) {
+  const floor = (typeof userFloor === 'number' && userFloor > 0) ? userFloor : tuneFloor(modeVal);  // modes.js handles int or string, any case
   const entry = VELOCITY_MULTIPLIERS.find(e => Math.abs(velocity) <= e.maxVelocity);
   const hz = floor * (entry ? entry.mult : 20);
   return isFast ? hz * FAST_MODE_MULTIPLIER : hz;
 }
 
-function getFlatStepHz(isFast, modeVal) {
-  const floor = tuneFloor(modeVal);
+function getFlatStepHz(isFast, modeVal, userFloor) {
+  const floor = (typeof userFloor === 'number' && userFloor > 0) ? userFloor : tuneFloor(modeVal);
   return isFast ? floor * FAST_MODE_MULTIPLIER : floor;
 }
 
@@ -75,6 +75,7 @@ class Controller extends EventEmitter {
     this._dialEndTimer = null;
     this._dialStepBuffer = 0;
     this._reducedSensitivityLevel = 1; // 1 = normal, >1 = require N physical steps per tune step
+    this._userTuningStep = null; // optional user override for base floor (Hz)
 
     this._bindEvents();
   }
@@ -128,6 +129,25 @@ class Controller extends EventEmitter {
     this.setReducedSensitivityLevel(divisor);
   }
 
+  /**
+   * Allow a user-specified base tuning step in Hz. When set, this value will
+   * be used as the floor for velocity calculations (and multiplied by velocity
+   * multipliers and fast-mode multiplier as usual). Set `null` or non-positive
+   * to clear the override.
+   */
+  setTuningStepOverride(hz) {
+    let newVal = null;
+    if (hz === null || hz === undefined || Number(hz) <= 0) {
+      newVal = null;
+    } else {
+      newVal = Math.max(1, Math.trunc(Number(hz) || 1));
+    }
+    // Only emit when the value actually changes to avoid duplicate notifications
+    if (this._userTuningStep === newVal) return;
+    this._userTuningStep = newVal;
+    this.emit('tuningStepChanged', this._userTuningStep);
+  }
+
   _suppressSnap(ms = 500) {
     this._snapSuppressUntil = Date.now() + ms;
   }
@@ -143,8 +163,8 @@ class Controller extends EventEmitter {
       // When velocity is disabled, use flat step (floor * fast multiplier only)
       const currentMode = this.flex.getActiveSlice()?.mode;  // integer from modes.js
       const hz = this._velocityEnabled
-        ? getStepHz(speed, this.tuneRate === 'fast', currentMode)
-        : getFlatStepHz(this.tuneRate === 'fast', currentMode);
+        ? getStepHz(speed, this.tuneRate === 'fast', currentMode, this._userTuningStep)
+        : getFlatStepHz(this.tuneRate === 'fast', currentMode, this._userTuningStep);
 
       // Support reduced sensitivity by buffering physical steps and only
       // applying one tune-step per two physical steps (2x less sensitive).
@@ -170,10 +190,30 @@ class Controller extends EventEmitter {
           this._weJustTuned = false;
           this._weJustTunedTimer = null;
         }, 1000);
-        this.flex.tune(deltaHz).catch((e) => {
-          this.emit('error', `Tune failed: ${e.message}`);
-        });
-        this.emit('dialMoved', applySteps, deltaHz, this.tuneRate);
+        // Compute predicted new frequency (Hz) using same snapping logic as flex.tune
+        try {
+          const slice = this.flex.getActiveSlice();
+          let predictedFreqHz = null;
+          if (slice && slice.freq_mhz) {
+            const floorHz = (typeof this._userTuningStep === 'number' && this._userTuningStep > 0)
+              ? this._userTuningStep
+              : tuneFloor(slice.mode);
+            let freqHz = Math.round(slice.freq_mhz * 1_000_000);
+            const remainder = freqHz % floorHz;
+            if (remainder !== 0) freqHz = Math.round(freqHz / floorHz) * floorHz;
+            predictedFreqHz = freqHz + deltaHz;
+          }
+
+          // Pass floor override so flex.tune won't snap to a coarser mode floor
+          this.flex.tune(deltaHz, { floorHzOverride: this._userTuningStep }).catch((e) => {
+            this.emit('error', `Tune failed: ${e.message}`);
+          });
+          this.emit('dialMoved', applySteps, deltaHz, this.tuneRate, predictedFreqHz);
+        } catch (e) {
+          // Fallback to original behavior
+          this.flex.tune(deltaHz).catch((err) => { this.emit('error', `Tune failed: ${err.message}`); });
+          this.emit('dialMoved', applySteps, deltaHz, this.tuneRate, null);
+        }
       }
 
       // Debounce dial end — after user stops turning, optionally snap to 1kHz
