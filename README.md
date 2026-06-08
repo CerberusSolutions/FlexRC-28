@@ -1,8 +1,8 @@
 # FlexRC-28
 
-**Icom RC-28 USB encoder controller for FlexRadio SmartSDR**
+**Icom RC-28 USB encoder controller for FlexRadio SmartSDR and AetherSDR**
 
-FlexRC-28 connects an Icom RC-28 USB remote encoder to a FlexRadio FLEX-6000/8000 series radio running SmartSDR for Windows. It replaces the need for a mouse when tuning, gives you one-touch mode and band cycling, and adds PTT latch for comfortable ragchew operation.
+FlexRC-28 connects an Icom RC-28 USB remote encoder to a FlexRadio FLEX-6000/8000 series radio running SmartSDR or AetherSDR for Windows. It replaces the need for a mouse when tuning, gives you one-touch mode and band cycling, and adds PTT latch for comfortable ragchew operation.
 
 ![Status: Working](https://img.shields.io/badge/status-working-brightgreen)
 ![Platform: Windows](https://img.shields.io/badge/platform-Windows-blue)
@@ -11,17 +11,11 @@ FlexRC-28 connects an Icom RC-28 USB remote encoder to a FlexRadio FLEX-6000/800
 
 ---
 
-## Download
-
-**[⬇ Download the latest installer from Releases](https://github.com/CerberusSolutions/FlexRC-28/releases/latest)**
-
-No Node.js or build tools required — just download and run the installer.
-
----
-
 ## Features
 
 - **Dial tuning** — velocity-sensitive, slow (10 Hz/step) and fast (100 Hz/step) modes
+- **Tuning Sensitivity** — determines how much physical rotation is required before a frequency change is sent to the radio; at the rightmost (maximum) position every detected wheel movement triggers a step, while sliding left requires progressively more rotation before a step fires — useful for high-gearing the dial so a full rotation only nudges the frequency a small amount
+- **Tuning Step** — determines the frequency step size applied on each detected rotation increment; moving the slider left selects a smaller step (e.g. 1 Hz) while the rightmost position selects a larger step (e.g. 100 Hz); together with Tuning Sensitivity, sliding both controls toward the left makes the frequency change very slowly and allows fine, precise tuning with the RC-28 wheel
 - **Step snapping** — switches between step sizes with automatic frequency boundary snap
 - **Snap to 1 kHz** — detects panadapter clicks and snaps to nearest 1 kHz; ignores mouse wheel and dial tuning
 - **PTT** — momentary press-and-hold, or hold 2.5 seconds to latch TX on; tap again to release
@@ -31,7 +25,7 @@ No Node.js or build tools required — just download and run the installer.
 - **Link LED** — solid green when connected to radio
 - **TX LED** — lights during transmit, stays lit when latched
 - **F1/F2 LEDs** — mirror app state (fast mode, RIT active)
-- **Radio discovery** — automatically finds FlexRadio on local network
+- **Radio discovery** — automatically finds FlexRadio on local network; if exactly one radio is found it is selected and connected automatically at startup
 - **All button assignments configurable** — assign any action to any button press or hold
 - **Settings persisted** — reconnects automatically on next launch
 
@@ -47,20 +41,7 @@ No Node.js or build tools required — just download and run the installer.
 
 ## Installation
 
-### Option 1 — Installer (recommended)
-
-Download `FlexRC-28 Setup x.x.x.exe` from the [Releases page](https://github.com/CerberusSolutions/FlexRC-28/releases/latest) and run it. Creates a Start Menu shortcut and desktop icon. No additional software required.
-
-### Option 2 — Run from source
-
-Requires [Node.js 18+](https://nodejs.org).
-
-```bash
-git clone https://github.com/CerberusSolutions/FlexRC-28.git
-cd FlexRC-28
-npm install
-npm start
-```
+See [INSTALL.md](INSTALL.md) for step-by-step instructions covering both the installer and running from source.
 
 ---
 
@@ -79,7 +60,7 @@ npm start
 |--------|--------|
 | PTT press & hold | Transmit (momentary) |
 | PTT hold 2.5s | Latch TX on — tap to release |
-| F1 press | Toggle fast/slow tuning |
+| F1 press | Toggle fast/slow tuning (5x or 1x step size) |
 | F1 hold | Cycle mode (LSB → USB → CW → AM) |
 | F2 press | Toggle RIT |
 | F2 hold | Cycle band (160m → 80m → … → 6m) |
@@ -98,7 +79,7 @@ All assignments can be changed in the Button Assignments panel. Available action
 
 ### Snap to 1 kHz
 
-Enable the **Snap to 1kHz** toggle to automatically snap to the nearest 1 kHz whenever you click in the SmartSDR panadapter. Mouse wheel and dial tuning are not affected — the feature detects clicks by their sub-10 Hz frequency remainder, which only occurs on panadapter clicks.
+Enable the **Snap to 1kHz** toggle to snap to the nearest 1 kHz frequency 0.6 seconds after dial rotation stops.
 
 ### PTT Latch
 
@@ -214,6 +195,8 @@ Built with [Electron](https://electronjs.org). Uses Electron's built-in WebHID A
 RC-28 HID protocol reverse-engineered using USBPcap and Wireshark.
 
 SmartSDR TCP/IP API documented at [github.com/flexradio/smartsdr-api-docs](https://github.com/flexradio/smartsdr-api-docs).
+
+Thanks to Steve Walker CerberusSolutions for the original edition of this project
 
 ---
 
