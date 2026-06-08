@@ -353,7 +353,7 @@
   /* ── Options row ── */
   .options-row {
     display: flex;
-    gap: 12px;
+    gap: 6px;
     align-items: center;
     margin-top: 8px;
     padding-top: 8px;
@@ -362,7 +362,7 @@
   .toggle-label {
     display: flex;
     align-items: center;
-    gap: 8px;
+    gap: 6px;
     cursor: pointer;
     font-family: var(--cond);
     font-size: 11px;
@@ -373,7 +373,7 @@
   }
   .toggle-label input[type=checkbox] { display: none; }
   .toggle-track {
-    width: 32px; height: 16px;
+    width: 36px; height: 18px;
     background: var(--panel);
     border: 1px solid var(--border);
     border-radius: 8px;
@@ -383,14 +383,17 @@
   .toggle-track::after {
     content: '';
     position: absolute;
-    left: 2px; top: 2px;
-    width: 10px; height: 10px;
+    left: 3px; top: 3px;
+    width: 12px; height: 12px;
     border-radius: 50%;
     background: var(--muted);
     transition: all 0.2s;
   }
   input:checked + .toggle-track { background: rgba(0,170,255,0.2); border-color: var(--accent); }
-  input:checked + .toggle-track::after { left: 18px; background: var(--accent); }
+  input:checked + .toggle-track::after { left: auto; right: 3px; background: var(--accent); }
+
+  /* push specific label (tuning sensitivity) to the right edge */
+  .toggle-label.push-right { margin-left: auto; }
 
   /* Range slider tick marks container */
   :root { --range-thumb-w: 14px; }
@@ -566,6 +569,11 @@
         <!-- Populated by JS -->
       </div>
       <div class="options-row">
+        <label class="toggle-label" title="When enabled, holding PTT for 2.5 seconds latches TX on; when off, PTT is always momentary.">
+          <input type="checkbox" id="ptt-latch-toggle">
+          <span class="toggle-track"></span>
+          PTT Latch
+        </label>
         <label class="toggle-label" title="When enabled, clicks in the panadapter snap to the nearest 1 kHz.">
           <input type="checkbox" id="snap-tuning">
           <span class="toggle-track"></span>
@@ -588,7 +596,7 @@
           </div>
           Tuning Step
         </label>
-        <label class="toggle-label" title="Tuning Sensitivity: slide right for faster tuning, left for slower tuning">
+        <label class="toggle-label push-right" title="Tuning Sensitivity: slide right for faster tuning, left for slower tuning">
           <div class="range-wrap">
             <input type="range" id="tuning-sensitivity" min="1" max="10" value="10" step="1" list="tickmarks">
             <datalist id="tickmarks">
@@ -697,6 +705,7 @@ async function init() {
   document.getElementById('station-name').value = settings.stationName || '';
   document.getElementById('snap-tuning').checked = !!settings.snapTuning;
   document.getElementById('velocity-tuning').checked = settings.velocityTuning !== false;
+  document.getElementById('ptt-latch-toggle').checked = (settings.pttLatchEnabled !== false);
   // tuningSensitivityLevel: 1 (least sensitive/most reduction) .. 5 (most sensitive)
   document.getElementById('tuning-sensitivity').value = settings.tuningSensitivityLevel || settings.reducedTuningLevel || 10;
 
@@ -808,6 +817,14 @@ function bindEvents() {
     log(`Snap to 1kHz: ${e.target.checked ? 'ON' : 'OFF'}`);
   });
 
+  document.getElementById('ptt-latch-toggle').addEventListener('change', async (e) => {
+    // Apply immediately — enable/disable latch behaviour and persist
+    const enabled = !!e.target.checked;
+    await api.ctrl.setPTTLatchEnabled(enabled);
+    await api.settings.save({ pttLatchEnabled: enabled });
+    log(`PTT Latch: ${enabled ? 'ENABLED (hold 2.5s to latch)' : 'DISABLED (momentary only)'}`);
+  });
+
   document.getElementById('velocity-tuning').addEventListener('change', async (e) => {
     // Apply immediately — don't wait for Save Settings
     await api.settings.save({ velocityTuning: e.target.checked });
@@ -895,6 +912,7 @@ function bindEvents() {
       radioIP:        document.getElementById('radio-ip').value.trim(),
       stationName:    document.getElementById('station-name').value.trim(),
       snapTuning:     document.getElementById('snap-tuning').checked,
+      pttLatchEnabled: document.getElementById('ptt-latch-toggle').checked,
       velocityTuning: document.getElementById('velocity-tuning').checked,
       tuningSensitivityLevel:  Number(document.getElementById('tuning-sensitivity').value) || 5,
       tuningStepOverride: currentUserTuningStep === null ? undefined : Number(currentUserTuningStep),

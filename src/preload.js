@@ -33,6 +33,7 @@ contextBridge.exposeInMainWorld('api', {
     getActions:          () => ipcRenderer.invoke('ctrl:getActions'),
     getAvailableActions: () => ipcRenderer.invoke('ctrl:getAvailableActions'),
     setTuningStep:       (hz) => ipcRenderer.invoke('ctrl:setTuningStep', hz),
+    setPTTLatchEnabled:  (enabled) => ipcRenderer.invoke('ctrl:setPTTLatchEnabled', !!enabled),
     on: (event, cb) => ipcRenderer.on(`ctrl:${event}`, (_, data) => cb(data)),
   },
   app: {

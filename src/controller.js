@@ -63,6 +63,7 @@ class Controller extends EventEmitter {
     this.dialLocked = false;
     this._pttDown = false;
     this._pttLatched = false;
+    this._pttLatchEnabled = true;
     this._pttPressTime = 0;
     this._pttLatchTimer = null;
     this._snapEnabled = false;
@@ -146,6 +147,13 @@ class Controller extends EventEmitter {
     if (this._userTuningStep === newVal) return;
     this._userTuningStep = newVal;
     this.emit('tuningStepChanged', this._userTuningStep);
+  }
+
+  /** Enable or disable PTT latching behaviour. When disabled, holding PTT
+   *  will only act momentarily and will never transition to a latched state.
+   */
+  setPTTLatchEnabled(enabled) {
+    this._pttLatchEnabled = !!enabled;
   }
 
   _suppressSnap(ms = 500) {
@@ -292,14 +300,17 @@ class Controller extends EventEmitter {
         this.emit('ptt', true);
 
         // Start latch countdown — fires at 2.5s while button still held
-        this._pttLatchTimer = setTimeout(() => {
-          this._pttLatchTimer = null;
-          if (this._pttDown && !this._pttLatched) {
-            this._pttLatched = true;
-            this.emit('pttLatch', true);
-            this.emit('actionExecuted', { action: 'ptt_latch', btn: 'ptt', type: 'hold', value: 'LATCHED' });
-          }
-        }, 2500);
+        // Only start the timer when latch behaviour is enabled.
+        if (this._pttLatchEnabled) {
+          this._pttLatchTimer = setTimeout(() => {
+            this._pttLatchTimer = null;
+            if (this._pttDown && !this._pttLatched) {
+              this._pttLatched = true;
+              this.emit('pttLatch', true);
+              this.emit('actionExecuted', { action: 'ptt_latch', btn: 'ptt', type: 'hold', value: 'LATCHED' });
+            }
+          }, 2500);
+        }
       }
     });
 

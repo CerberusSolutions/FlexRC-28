@@ -44,6 +44,7 @@ function loadSettings() {
     actions: {},
     snapTuning: false,
     velocityTuning: true,
+    pttLatchEnabled: true,
     tuningSensitivityLevel: 10,
   };
 }
@@ -124,6 +125,10 @@ function initHardware() {
   // Apply saved tuning step override if present
   if (settings.tuningStepOverride !== undefined && settings.tuningStepOverride !== null) {
     if (typeof controller.setTuningStepOverride === 'function') controller.setTuningStepOverride(Number(settings.tuningStepOverride) || null);
+  }
+  // Apply saved PTT latch preference if present
+  if (settings.pttLatchEnabled !== undefined && typeof controller.setPTTLatchEnabled === 'function') {
+    controller.setPTTLatchEnabled(!!settings.pttLatchEnabled);
   }
 
   // ── RC-28 events → renderer ──
@@ -285,6 +290,9 @@ ipcMain.handle('settings:save', (_, newSettings) => {
   if (newSettings.velocityTuning !== undefined && controller) {
     controller.setVelocity(!!newSettings.velocityTuning);
   }
+  if (newSettings.pttLatchEnabled !== undefined && controller && typeof controller.setPTTLatchEnabled === 'function') {
+    controller.setPTTLatchEnabled(!!newSettings.pttLatchEnabled);
+  }
   if (newSettings.tuningStepOverride !== undefined && controller) {
     if (newSettings.tuningStepOverride === null) controller.setTuningStepOverride(null);
     else if (typeof controller.setTuningStepOverride === 'function') controller.setTuningStepOverride(Number(newSettings.tuningStepOverride) || null);
@@ -299,6 +307,11 @@ ipcMain.handle('ctrl:getAvailableActions', () => (controller ? controller.getAva
 ipcMain.handle('ctrl:setTuningStep', (_, hz) => {
   if (controller && typeof controller.setTuningStepOverride === 'function') {
     controller.setTuningStepOverride(hz);
+  }
+});
+ipcMain.handle('ctrl:setPTTLatchEnabled', (_, enabled) => {
+  if (controller && typeof controller.setPTTLatchEnabled === 'function') {
+    controller.setPTTLatchEnabled(!!enabled);
   }
 });
 

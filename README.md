@@ -84,7 +84,7 @@ Enable the **Snap to 1kHz** toggle to snap to the nearest 1 kHz frequency 0.6 se
 ### PTT Latch
 
 - **Short press and hold** — transmits while held, releases on button release
-- **Hold 2.5 seconds** — latches TX on; the TX badge changes to **TX LATCH**
+- **Hold 2.5 seconds** — when PTT Latch button is on on, latches TX after 2.5 seconds; the TX badge changes to **TX LATCH**
 - **Tap PTT while latched** — immediately releases TX
 
 ---
