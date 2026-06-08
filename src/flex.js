@@ -305,6 +305,13 @@ class FlexRadio extends EventEmitter {
     const slice = this._slices.get(sliceId);
     if (!slice) return;
     slice.rit_on = enabled;
+    // When enabling RIT, some radios report a sentinel like -1 for rit_freq.
+    // Present a local 0 Hz offset to the UI so RIT starts at 0 until user
+    // actually moves the encoder. Do not force the radio to change rit_freq
+    // yet; the first dial action will send the real rit change.
+    if (enabled && (slice.rit_freq === undefined || slice.rit_freq === -1)) {
+      slice.rit_freq = 0;
+    }
     await this.sendCmd(`slice set ${sliceId} rit_on=${enabled ? 1 : 0}`);
     this.emit('ritModeChanged', sliceId, enabled);
     this.emit('sliceUpdated', sliceId, { ...slice });

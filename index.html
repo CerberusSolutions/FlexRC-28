@@ -1073,7 +1073,7 @@ function updateFreqDisplay(slice) {
   const disp = document.getElementById('freq-display');
   disp.classList.toggle('rit-mode', !!slice.rit_on);
 
-  if (slice.rit_on && slice.rit_freq != null && slice.rit_freq !== 0) {
+  if (slice.rit_on && slice.rit_freq != null) {
     const sign = slice.rit_freq > 0 ? '+' : '';
     disp.textContent = `${formatted}  RIT ${sign}${slice.rit_freq} Hz`;
   } else {

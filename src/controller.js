@@ -180,7 +180,16 @@ class Controller extends EventEmitter {
       if (applySteps === 0) {
         // nothing to apply yet
       } else {
-        const deltaHz = applySteps * hz;
+        // If RIT mode is active, always use a fixed 10 Hz step and ignore
+        // the user-selected tuning step / velocity settings until RIT is
+        // disabled. This ensures RIT adjustments are predictable.
+        const slice = this.flex.getActiveSlice();
+        let deltaHz;
+        if (slice && slice.rit_on) {
+          deltaHz = applySteps * 10; // fixed 10Hz per logical step
+        } else {
+          deltaHz = applySteps * hz;
+        }
 
         // Flag that WE are tuning so snap doesn't fire on our own dial updates
         this._weJustTuned = true;
@@ -190,11 +199,12 @@ class Controller extends EventEmitter {
           this._weJustTuned = false;
           this._weJustTunedTimer = null;
         }, 1000);
-        // Compute predicted new frequency (Hz) using same snapping logic as flex.tune
+
         try {
-          const slice = this.flex.getActiveSlice();
+          // For normal tuning, compute a predicted frequency using the
+          // current floor. For RIT we don't predict the main freq.
           let predictedFreqHz = null;
-          if (slice && slice.freq_mhz) {
+          if (!(slice && slice.rit_on) && slice && slice.freq_mhz) {
             const floorHz = (typeof this._userTuningStep === 'number' && this._userTuningStep > 0)
               ? this._userTuningStep
               : tuneFloor(slice.mode);
@@ -204,11 +214,17 @@ class Controller extends EventEmitter {
             predictedFreqHz = freqHz + deltaHz;
           }
 
-          // Pass floor override so flex.tune won't snap to a coarser mode floor
-          this.flex.tune(deltaHz, { floorHzOverride: this._userTuningStep }).catch((e) => {
-            this.emit('error', `Tune failed: ${e.message}`);
-          });
-          this.emit('dialMoved', applySteps, deltaHz, this.tuneRate, predictedFreqHz);
+          // When tuning RIT, do not pass floor override or rely on velocity.
+          if (slice && slice.rit_on) {
+            this.flex.tune(deltaHz).catch((e) => { this.emit('error', `Tune failed: ${e.message}`); });
+            this.emit('dialMoved', applySteps, deltaHz, this.tuneRate, null);
+          } else {
+            // Pass floor override so flex.tune won't snap to a coarser mode floor
+            this.flex.tune(deltaHz, { floorHzOverride: this._userTuningStep }).catch((e) => {
+              this.emit('error', `Tune failed: ${e.message}`);
+            });
+            this.emit('dialMoved', applySteps, deltaHz, this.tuneRate, predictedFreqHz);
+          }
         } catch (e) {
           // Fallback to original behavior
           this.flex.tune(deltaHz).catch((err) => { this.emit('error', `Tune failed: ${err.message}`); });
