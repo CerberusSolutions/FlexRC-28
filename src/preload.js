@@ -17,6 +17,7 @@ contextBridge.exposeInMainWorld('api', {
     disconnect:     ()               => ipcRenderer.invoke('flex:disconnect'),
     isConnected:    ()               => ipcRenderer.invoke('flex:isConnected'),
     getSlices:      ()               => ipcRenderer.invoke('flex:getSlices'),
+    getActiveSlice: ()               => ipcRenderer.invoke('flex:getActiveSlice'),
     setActiveSlice: (id)             => ipcRenderer.invoke('flex:setActiveSlice', id),
     on: (event, cb) => ipcRenderer.on(`flex:${event}`, (_, data) => cb(data)),
   },
@@ -31,6 +32,11 @@ contextBridge.exposeInMainWorld('api', {
   ctrl: {
     getActions:          () => ipcRenderer.invoke('ctrl:getActions'),
     getAvailableActions: () => ipcRenderer.invoke('ctrl:getAvailableActions'),
+    setTuningStep:       (hz) => ipcRenderer.invoke('ctrl:setTuningStep', hz),
+    setPTTLatchEnabled:  (enabled) => ipcRenderer.invoke('ctrl:setPTTLatchEnabled', !!enabled),
     on: (event, cb) => ipcRenderer.on(`ctrl:${event}`, (_, data) => cb(data)),
+  },
+  app: {
+    on: (event, cb) => ipcRenderer.on(`app:${event}`, (_, data) => cb(data)),
   },
 });

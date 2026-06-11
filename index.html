@@ -332,7 +332,7 @@
     min-height: 80px;
   }
   .log-scroll {
-    height: 80px;
+    height: 240px;
     overflow-y: auto;
     scrollbar-width: thin;
     scrollbar-color: var(--border) transparent;
@@ -353,7 +353,7 @@
   /* ── Options row ── */
   .options-row {
     display: flex;
-    gap: 12px;
+    gap: 6px;
     align-items: center;
     margin-top: 8px;
     padding-top: 8px;
@@ -362,7 +362,7 @@
   .toggle-label {
     display: flex;
     align-items: center;
-    gap: 8px;
+    gap: 6px;
     cursor: pointer;
     font-family: var(--cond);
     font-size: 11px;
@@ -373,7 +373,7 @@
   }
   .toggle-label input[type=checkbox] { display: none; }
   .toggle-track {
-    width: 32px; height: 16px;
+    width: 36px; height: 18px;
     background: var(--panel);
     border: 1px solid var(--border);
     border-radius: 8px;
@@ -383,14 +383,89 @@
   .toggle-track::after {
     content: '';
     position: absolute;
-    left: 2px; top: 2px;
-    width: 10px; height: 10px;
+    left: 3px; top: 3px;
+    width: 12px; height: 12px;
     border-radius: 50%;
     background: var(--muted);
     transition: all 0.2s;
   }
   input:checked + .toggle-track { background: rgba(0,170,255,0.2); border-color: var(--accent); }
-  input:checked + .toggle-track::after { left: 18px; background: var(--accent); }
+  input:checked + .toggle-track::after { left: auto; right: 3px; background: var(--accent); }
+
+  /* push specific label (tuning sensitivity) to the right edge */
+  .toggle-label.push-right { margin-left: auto; }
+
+  /* Range slider tick marks container */
+  :root { --range-thumb-w: 14px; }
+  .range-wrap {
+    position: relative;
+    width: 120px;
+    display: inline-block;
+    transform: translateY(-6px); /* lift slider up slightly to align with labels */
+  }
+  /* make slider full-width of wrapper so ticks align exactly */
+  .range-wrap input[type=range] {
+    width: 100%;
+    -webkit-appearance: none;
+    height: 12px;
+    background: transparent;
+    padding: 0;
+    margin: 0;
+    display: block;
+  }
+  .range-wrap input[type=range]::-webkit-slider-runnable-track {
+    height: 6px;
+    background: var(--panel);
+    border-radius: 4px;
+    border: 1px solid var(--border);
+  }
+  .range-wrap input[type=range]::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    width: var(--range-thumb-w);
+    height: var(--range-thumb-w);
+    border-radius: 50%;
+    background: var(--accent);
+    margin-top: -5px; /* lift thumb to center between lines (tweak) */
+  }
+  .range-ticks {
+    position: absolute;
+    /* shrink and offset the tick container by half the thumb width so
+       percent positions correspond to the thumb center at extremes */
+    left: calc(var(--range-thumb-w) / 2);
+    width: calc(100% - var(--range-thumb-w));
+    top: calc(100% + 4px); /* place ticks below the track */
+    height: 6px;
+    pointer-events: none;
+  }
+  .range-ticks span {
+    position: absolute;
+    top: 0;
+    width: 2px;
+    height: 6px;
+    background: var(--border);
+    opacity: 0.95;
+    border-radius: 1px;
+    transform: translateX(-50%);
+  }
+  .range-ticks span:nth-child(1)  { left: 0%; }
+  .range-ticks span:nth-child(2)  { left: 11.111111%; }
+  .range-ticks span:nth-child(3)  { left: 22.222222%; }
+  .range-ticks span:nth-child(4)  { left: 33.333333%; }
+  .range-ticks span:nth-child(5)  { left: 44.444444%; }
+  .range-ticks span:nth-child(6)  { left: 55.555556%; }
+  .range-ticks span:nth-child(7)  { left: 66.666667%; }
+  .range-ticks span:nth-child(8)  { left: 77.777778%; }
+  .range-ticks span:nth-child(9)  { left: 88.888889%; }
+  .range-ticks span:nth-child(10) { left: 100%; }
+
+  /* Compact range used for tuning-step (fewer ticks, narrower) */
+  .compact-range { width: 90px; }
+  .compact-range .range-ticks span { height: 6px; }
+  .compact-range .range-ticks span:nth-child(1) { left: 0%; }
+  .compact-range .range-ticks span:nth-child(2) { left: 25%; }
+  .compact-range .range-ticks span:nth-child(3) { left: 50%; }
+  .compact-range .range-ticks span:nth-child(4) { left: 75%; }
+  .compact-range .range-ticks span:nth-child(5) { left: 100%; }
 
   /* ── Save row ── */
   .save-row {
@@ -494,15 +569,54 @@
         <!-- Populated by JS -->
       </div>
       <div class="options-row">
-        <label class="toggle-label">
+        <label class="toggle-label" title="When enabled, holding PTT for 2.5 seconds latches TX on; when off, PTT is always momentary.">
+          <input type="checkbox" id="ptt-latch-toggle">
+          <span class="toggle-track"></span>
+          PTT Latch
+        </label>
+        <label class="toggle-label" title="When enabled, clicks in the panadapter snap to the nearest 1 kHz.">
           <input type="checkbox" id="snap-tuning">
           <span class="toggle-track"></span>
           Snap to 1kHz
         </label>
-        <label class="toggle-label">
+        <label class="toggle-label" title="Velocity Tuning: enable variable step sizes based on turn speed.">
           <input type="checkbox" id="velocity-tuning" checked>
           <span class="toggle-track"></span>
           Velocity Tuning
+        </label>
+        <label class="toggle-label" title="Tuning Step: choose base per-encoder-step Hz">
+          <div style="display:flex;align-items:center;gap:8px;">
+            <div class="range-wrap compact-range">
+              <input type="range" id="tuning-step-range" min="0" max="4" step="1" value="4" />
+              <div class="range-ticks">
+                <span></span><span></span><span></span><span></span><span></span>
+              </div>
+            </div>
+            <div id="tuning-step-val" style="width:52px; text-align:right; font-family:var(--mono); color:var(--text);">100 Hz</div>
+          </div>
+          Tuning Step
+        </label>
+        <label class="toggle-label push-right" title="Tuning Sensitivity: slide right for faster tuning, left for slower tuning">
+          <div class="range-wrap">
+            <input type="range" id="tuning-sensitivity" min="1" max="10" value="10" step="1" list="tickmarks">
+            <datalist id="tickmarks">
+              <option value="1"></option>
+              <option value="2"></option>
+              <option value="3"></option>
+              <option value="4"></option>
+              <option value="5"></option>
+              <option value="6"></option>
+              <option value="7"></option>
+              <option value="8"></option>
+              <option value="9"></option>
+              <option value="10"></option>
+            </datalist>
+            <div class="range-ticks" id="tuning-ticks">
+              <span></span><span></span><span></span><span></span><span></span>
+              <span></span><span></span><span></span><span></span><span></span>
+            </div>
+          </div>
+          Tuning Sensitivity
         </label>
       </div>
       <div class="save-row">
@@ -537,11 +651,40 @@ function modeDisplay(val) {
   return String(val).toUpperCase();  // fallback for string
 }
 
+// Mirror of src/modes.js tuneFloor mapping so renderer can show step sizes
+const FAST_MODE_MULTIPLIER = 5;
+function tuneFloor(val) {
+  const m = (typeof val === 'number') ? val : (val == null ? null : String(val).toUpperCase());
+  // mapping by mode name when string passed
+  const FLOOR = {
+    'CW': 10,
+    'LSB': 100,
+    'USB': 100,
+    'DIGU': 100,
+    'DIGL': 100,
+    'RTTY': 100,
+    'SAM': 100,
+    'AM': 500,
+    'FM': 500,
+    'NFM': 500,
+    'DFM': 500,
+  };
+  if (typeof val === 'number') {
+    // try to map numeric id using MODE_NAMES
+    return FLOOR[MODE_NAMES[val]] || 100;
+  }
+  return FLOOR[m] || 100;
+}
+
 let settings = {};
 let availableActions = [];
 let currentActions = {};
 let discoveredRadios = {};
 let flexConnected = false;
+let currentTuneRate = 'slow';
+let currentUserTuningStep = null;
+let autoConnectAttempted = false;
+const TUNING_STEP_VALUES = [1,5,10,50,100];
 
 const BUTTON_SLOTS = [
   { key: 'ptt_press',  label: 'PTT Press'  },
@@ -562,10 +705,34 @@ async function init() {
   document.getElementById('station-name').value = settings.stationName || '';
   document.getElementById('snap-tuning').checked = !!settings.snapTuning;
   document.getElementById('velocity-tuning').checked = settings.velocityTuning !== false;
+  document.getElementById('ptt-latch-toggle').checked = (settings.pttLatchEnabled !== false);
+  // tuningSensitivityLevel: 1 (least sensitive/most reduction) .. 5 (most sensitive)
+  document.getElementById('tuning-sensitivity').value = settings.tuningSensitivityLevel || settings.reducedTuningLevel || 10;
+
+  // initialize tuning-step display from current slice/mode
+  // initialize tuning-step range from saved settings (persisted) or default
+  try {
+    const tuningRange = document.getElementById('tuning-step-range');
+    const tuningVal = document.getElementById('tuning-step-val');
+    const saved = settings.tuningStepOverride;
+    const initHz = (saved !== undefined && saved !== null) ? Number(saved) : 100;
+    let idx = TUNING_STEP_VALUES.indexOf(initHz);
+    if (idx === -1) idx = TUNING_STEP_VALUES.length - 1; // default to 100
+    if (tuningRange) tuningRange.value = idx;
+    if (tuningVal) tuningVal.textContent = `${TUNING_STEP_VALUES[idx]} Hz`;
+  } catch (e) {}
+  try { refreshTuningStep(); } catch (e) {}
 
   buildAssignGrid();
   bindEvents();
   setupRadioListeners();
+
+  // Refresh controller info when main process signals hardware ready
+  api.app.on('ready', async () => {
+    availableActions = await api.ctrl.getAvailableActions();
+    currentActions   = await api.ctrl.getActions();
+    buildAssignGrid();
+  });
 
   // Check current connection states
   const rc28Ok   = await api.rc28.isConnected();
@@ -650,11 +817,88 @@ function bindEvents() {
     log(`Snap to 1kHz: ${e.target.checked ? 'ON' : 'OFF'}`);
   });
 
+  document.getElementById('ptt-latch-toggle').addEventListener('change', async (e) => {
+    // Apply immediately — enable/disable latch behaviour and persist
+    const enabled = !!e.target.checked;
+    await api.ctrl.setPTTLatchEnabled(enabled);
+    await api.settings.save({ pttLatchEnabled: enabled });
+    log(`PTT Latch: ${enabled ? 'ENABLED (hold 2.5s to latch)' : 'DISABLED (momentary only)'}`);
+  });
+
   document.getElementById('velocity-tuning').addEventListener('change', async (e) => {
     // Apply immediately — don't wait for Save Settings
     await api.settings.save({ velocityTuning: e.target.checked });
     log(`Velocity tuning: ${e.target.checked ? 'ON' : 'OFF'}`);
   });
+
+  document.getElementById('tuning-sensitivity').addEventListener('input', async (e) => {
+    // Apply immediately — save numeric sensitivity level (1..10)
+    const lvl = Number(e.target.value) || 10;
+    await api.settings.save({ tuningSensitivityLevel: lvl });
+    log(`Tuning sensitivity: ${lvl}`);
+  });
+
+  // Make tuning-sensitivity adjustable with mouse wheel when over the control
+  const sensEl = document.getElementById('tuning-sensitivity');
+  if (sensEl) {
+    sensEl.addEventListener('wheel', (e) => {
+      e.preventDefault();
+      const dir = e.deltaY < 0 ? 1 : -1;
+      const min = Number(sensEl.min);
+      const max = Number(sensEl.max);
+      const step = Number(sensEl.step) || 1;
+      let val = Number(sensEl.value) || 0;
+      val = Math.max(min, Math.min(max, val + dir * step));
+      if (val !== Number(sensEl.value)) {
+        sensEl.value = val;
+        sensEl.dispatchEvent(new Event('input', { bubbles: true }));
+        sensEl.dispatchEvent(new Event('change', { bubbles: true }));
+      }
+    }, { passive: false });
+  }
+
+  // Tuning step override — discrete range control
+  const tuningRange = document.getElementById('tuning-step-range');
+  const tuningVal = document.getElementById('tuning-step-val');
+  function updateTuningValDisplay(idx) {
+    const hz = TUNING_STEP_VALUES[Math.max(0, Math.min(TUNING_STEP_VALUES.length-1, Number(idx)))] || 100;
+    if (tuningVal) tuningVal.textContent = `${hz} Hz`;
+    return hz;
+  }
+  if (tuningRange) {
+    // live preview while sliding
+    tuningRange.addEventListener('input', (e) => updateTuningValDisplay(e.target.value));
+
+    // commit on change: set controller override and persist setting
+    tuningRange.addEventListener('change', async (e) => {
+      const idx = Number(e.target.value);
+      const hz = updateTuningValDisplay(idx);
+      currentUserTuningStep = hz;
+      try {
+        await api.ctrl.setTuningStep(hz);
+        await api.settings.save({ tuningStepOverride: hz });
+      } catch (err) {
+        log(`Failed to set tuning step: ${err && err.message ? err.message : String(err)}`, 'err');
+      }
+    });
+
+    // Mouse wheel support: adjust slider with wheel and prevent page scrolling
+    tuningRange.addEventListener('wheel', (e) => {
+      // Only handle vertical wheel; prevent default scrolling when over control
+      e.preventDefault();
+      const dir = e.deltaY < 0 ? 1 : -1; // wheel up -> increase
+      const min = Number(tuningRange.min);
+      const max = Number(tuningRange.max);
+      const step = Number(tuningRange.step) || 1;
+      let val = Number(tuningRange.value) || 0;
+      val = Math.max(min, Math.min(max, val + dir * step));
+      if (val !== Number(tuningRange.value)) {
+        tuningRange.value = val;
+        tuningRange.dispatchEvent(new Event('input', { bubbles: true }));
+        tuningRange.dispatchEvent(new Event('change', { bubbles: true }));
+      }
+    }, { passive: false });
+  }
 
   // Save settings
   document.getElementById('save-btn').addEventListener('click', async () => {
@@ -668,7 +912,10 @@ function bindEvents() {
       radioIP:        document.getElementById('radio-ip').value.trim(),
       stationName:    document.getElementById('station-name').value.trim(),
       snapTuning:     document.getElementById('snap-tuning').checked,
+      pttLatchEnabled: document.getElementById('ptt-latch-toggle').checked,
       velocityTuning: document.getElementById('velocity-tuning').checked,
+      tuningSensitivityLevel:  Number(document.getElementById('tuning-sensitivity').value) || 5,
+      tuningStepOverride: currentUserTuningStep === null ? undefined : Number(currentUserTuningStep),
       actions,
     };
 
@@ -724,6 +971,8 @@ function setupRadioListeners() {
 
   api.flex.on('sliceUpdated', (slice) => {
     updateFreqDisplay(slice);
+    // refresh tuning-step when slice/mode changes
+    try { refreshTuningStep(); } catch (e) {}
   });
 
   api.flex.on('pttChanged', (on) => {
@@ -740,14 +989,39 @@ function setupRadioListeners() {
       opt.textContent = `${radio.name} (${radio.model}) – ${radio.ip}`;
       sel.appendChild(opt);
       document.getElementById('discovery-row').style.display = 'block';
+
+      // If exactly one radio is discovered at startup, auto-select and connect.
+      // Only attempt this once to avoid surprising the user when more radios appear later.
+      try {
+        const count = Object.keys(discoveredRadios).length;
+        if (count === 1 && !autoConnectAttempted && !flexConnected) {
+          // select it in the UI
+          sel.value = radio.ip;
+          document.getElementById('radio-ip').value = radio.ip;
+          if (radio.name) document.getElementById('station-name').value = radio.name;
+
+          // small defer so UI updates before triggering connection
+          setTimeout(() => {
+            const connectBtn = document.getElementById('connect-btn');
+            if (connectBtn) connectBtn.click();
+          }, 100);
+
+          autoConnectAttempted = true;
+        }
+      } catch (e) {
+        // non-fatal; ignore
+      }
     }
   });
 
   // Controller
-  api.ctrl.on('dialMoved', async ({ steps, deltaHz, rate }) => {
-    // Immediately update display from current slice state
-    const slices = await api.flex.getSlices();
-    if (slices && slices.length > 0) updateFreqDisplay(slices[0]);
+  api.ctrl.on('dialMoved', async ({ steps, deltaHz, rate, predictedFreqHz }) => {
+    // Do not overwrite user-selected tuning-step. Keep it authoritative.
+    // Immediately update display from current slice state and log debug info
+    const slice = await api.flex.getActiveSlice();
+    if (slice) {
+      updateFreqDisplay(slice);
+    }
   });
 
   api.ctrl.on('ptt', (on) => {
@@ -770,7 +1044,15 @@ function setupRadioListeners() {
 
   api.ctrl.on('tuneModeChanged', (rate) => {
     setBadge('badge-fast', rate === 'fast');
+    currentTuneRate = rate === 'fast' ? 'fast' : 'slow';
+    try { refreshTuningStep(); } catch (e) {}
     log(`Tune rate: ${rate}`);
+  });
+
+  // Controller tuning step override notifications
+  api.ctrl.on('tuningStepChanged', (val) => {
+    currentUserTuningStep = val || null;
+    log(val ? `Tuning step set to ${val} Hz` : 'Tuning step cleared');
   });
 
   api.ctrl.on('dialLockChanged', (locked) => {
@@ -809,7 +1091,7 @@ function updateFreqDisplay(slice) {
   const disp = document.getElementById('freq-display');
   disp.classList.toggle('rit-mode', !!slice.rit_on);
 
-  if (slice.rit_on && slice.rit_freq != null && slice.rit_freq !== 0) {
+  if (slice.rit_on && slice.rit_freq != null) {
     const sign = slice.rit_freq > 0 ? '+' : '';
     disp.textContent = `${formatted}  RIT ${sign}${slice.rit_freq} Hz`;
   } else {
@@ -832,6 +1114,21 @@ function setFlexStatus(state, text) {
   const card = document.getElementById('flex-card');
   card.className = 'status-card ' + state;
   document.getElementById('flex-status').textContent = text;
+}
+
+// Refresh the tuning-step input based on current slice mode and tune rate
+async function refreshTuningStep() {
+  try {
+    const slices = await api.flex.getSlices();
+    if (!slices || slices.length === 0) return;
+    const slice = slices[0];
+    if (!slice || slice.mode === undefined) return;
+    const floor = tuneFloor(slice.mode);
+    const step = (currentTuneRate === 'fast') ? floor * FAST_MODE_MULTIPLIER : floor;
+    // Do not overwrite the user's tuning-step input. We only compute here.
+  } catch (e) {
+    // ignore
+  }
 }
 
 function setBadge(id, active, activeClass = 'active') {

@@ -24,15 +24,15 @@ const VELOCITY_MULTIPLIERS = [
 
 const FAST_MODE_MULTIPLIER = 5;
 
-function getStepHz(velocity, isFast, modeVal) {
-  const floor = tuneFloor(modeVal);  // modes.js handles int or string, any case
+function getStepHz(velocity, isFast, modeVal, userFloor) {
+  const floor = (typeof userFloor === 'number' && userFloor > 0) ? userFloor : tuneFloor(modeVal);  // modes.js handles int or string, any case
   const entry = VELOCITY_MULTIPLIERS.find(e => Math.abs(velocity) <= e.maxVelocity);
   const hz = floor * (entry ? entry.mult : 20);
   return isFast ? hz * FAST_MODE_MULTIPLIER : hz;
 }
 
-function getFlatStepHz(isFast, modeVal) {
-  const floor = tuneFloor(modeVal);
+function getFlatStepHz(isFast, modeVal, userFloor) {
+  const floor = (typeof userFloor === 'number' && userFloor > 0) ? userFloor : tuneFloor(modeVal);
   return isFast ? floor * FAST_MODE_MULTIPLIER : floor;
 }
 
@@ -63,6 +63,7 @@ class Controller extends EventEmitter {
     this.dialLocked = false;
     this._pttDown = false;
     this._pttLatched = false;
+    this._pttLatchEnabled = true;
     this._pttPressTime = 0;
     this._pttLatchTimer = null;
     this._snapEnabled = false;
@@ -72,6 +73,10 @@ class Controller extends EventEmitter {
     this._snapSuppressUntil = 0;
     this._lastSnapFreq = null;
     this._lastSnapSlice = null;
+    this._dialEndTimer = null;
+    this._dialStepBuffer = 0;
+    this._reducedSensitivityLevel = 1; // 1 = normal, >1 = require N physical steps per tune step
+    this._userTuningStep = null; // optional user override for base floor (Hz)
 
     this._bindEvents();
   }
@@ -107,6 +112,50 @@ class Controller extends EventEmitter {
     this._velocityEnabled = enabled;
   }
 
+  setReducedSensitivityLevel(level) {
+    const lvl = Math.max(1, Math.trunc(Number(level) || 1));
+    this._reducedSensitivityLevel = lvl;
+    if (lvl === 1) this._dialStepBuffer = 0; // reset buffer when disabling
+  }
+
+  /**
+   * Accept a user-facing tuning sensitivity level 1..5 where 5 is most sensitive.
+   * Internally we use a divisor (physical steps per tune step) so map accordingly.
+   */
+  setTuningSensitivityLevel(userLevel) {
+    const lvl = Math.max(1, Math.min(10, Math.trunc(Number(userLevel) || 10)));
+    // Map: userLevel 10 -> divisor 1 (apply every physical step)
+    //      userLevel 1  -> divisor 10 (apply once every 10 physical steps)
+    const divisor = Math.max(1, 11 - lvl);
+    this.setReducedSensitivityLevel(divisor);
+  }
+
+  /**
+   * Allow a user-specified base tuning step in Hz. When set, this value will
+   * be used as the floor for velocity calculations (and multiplied by velocity
+   * multipliers and fast-mode multiplier as usual). Set `null` or non-positive
+   * to clear the override.
+   */
+  setTuningStepOverride(hz) {
+    let newVal = null;
+    if (hz === null || hz === undefined || Number(hz) <= 0) {
+      newVal = null;
+    } else {
+      newVal = Math.max(1, Math.trunc(Number(hz) || 1));
+    }
+    // Only emit when the value actually changes to avoid duplicate notifications
+    if (this._userTuningStep === newVal) return;
+    this._userTuningStep = newVal;
+    this.emit('tuningStepChanged', this._userTuningStep);
+  }
+
+  /** Enable or disable PTT latching behaviour. When disabled, holding PTT
+   *  will only act momentarily and will never transition to a latched state.
+   */
+  setPTTLatchEnabled(enabled) {
+    this._pttLatchEnabled = !!enabled;
+  }
+
   _suppressSnap(ms = 500) {
     this._snapSuppressUntil = Date.now() + ms;
   }
@@ -122,22 +171,108 @@ class Controller extends EventEmitter {
       // When velocity is disabled, use flat step (floor * fast multiplier only)
       const currentMode = this.flex.getActiveSlice()?.mode;  // integer from modes.js
       const hz = this._velocityEnabled
-        ? getStepHz(speed, this.tuneRate === 'fast', currentMode)
-        : getFlatStepHz(this.tuneRate === 'fast', currentMode);
-      const deltaHz = steps * hz;
+        ? getStepHz(speed, this.tuneRate === 'fast', currentMode, this._userTuningStep)
+        : getFlatStepHz(this.tuneRate === 'fast', currentMode, this._userTuningStep);
 
-    // Flag that WE are tuning so snap doesn't fire on our own dial updates
-    this._weJustTuned = true;
-    this._suppressSnap(800);
-    if (this._weJustTunedTimer) clearTimeout(this._weJustTunedTimer);
-      this._weJustTunedTimer = setTimeout(() => {
-        this._weJustTuned = false;
-        this._weJustTunedTimer = null;
-      }, 1000);
-      this.flex.tune(deltaHz).catch((e) => {
-        this.emit('error', `Tune failed: ${e.message}`);
-      });
-      this.emit('dialMoved', steps, deltaHz, this.tuneRate);
+      // Support reduced sensitivity by buffering physical steps and only
+      // applying one tune-step per two physical steps (2x less sensitive).
+      let applySteps = steps;
+      if (this._reducedSensitivityLevel > 1) {
+        const lvl = this._reducedSensitivityLevel;
+        this._dialStepBuffer += steps;
+        applySteps = Math.trunc(this._dialStepBuffer / lvl);
+        // keep remainder in buffer
+        this._dialStepBuffer -= applySteps * lvl;
+      }
+
+      if (applySteps === 0) {
+        // nothing to apply yet
+      } else {
+        // If RIT mode is active, always use a fixed 10 Hz step and ignore
+        // the user-selected tuning step / velocity settings until RIT is
+        // disabled. This ensures RIT adjustments are predictable.
+        const slice = this.flex.getActiveSlice();
+        let deltaHz;
+        if (slice && slice.rit_on) {
+          deltaHz = applySteps * 10; // fixed 10Hz per logical step
+        } else {
+          deltaHz = applySteps * hz;
+        }
+
+        // Flag that WE are tuning so snap doesn't fire on our own dial updates
+        this._weJustTuned = true;
+        this._suppressSnap(800);
+        if (this._weJustTunedTimer) clearTimeout(this._weJustTunedTimer);
+        this._weJustTunedTimer = setTimeout(() => {
+          this._weJustTuned = false;
+          this._weJustTunedTimer = null;
+        }, 1000);
+
+        try {
+          // For normal tuning, compute a predicted frequency using the
+          // current floor. For RIT we don't predict the main freq.
+          let predictedFreqHz = null;
+          if (!(slice && slice.rit_on) && slice && slice.freq_mhz) {
+            const floorHz = (typeof this._userTuningStep === 'number' && this._userTuningStep > 0)
+              ? this._userTuningStep
+              : tuneFloor(slice.mode);
+            let freqHz = Math.round(slice.freq_mhz * 1_000_000);
+            const remainder = freqHz % floorHz;
+            if (remainder !== 0) freqHz = Math.round(freqHz / floorHz) * floorHz;
+            predictedFreqHz = freqHz + deltaHz;
+          }
+
+          // When tuning RIT, do not pass floor override or rely on velocity.
+          if (slice && slice.rit_on) {
+            this.flex.tune(deltaHz).catch((e) => { this.emit('error', `Tune failed: ${e.message}`); });
+            this.emit('dialMoved', applySteps, deltaHz, this.tuneRate, null);
+          } else {
+            // Pass floor override so flex.tune won't snap to a coarser mode floor
+            this.flex.tune(deltaHz, { floorHzOverride: this._userTuningStep }).catch((e) => {
+              this.emit('error', `Tune failed: ${e.message}`);
+            });
+            this.emit('dialMoved', applySteps, deltaHz, this.tuneRate, predictedFreqHz);
+          }
+        } catch (e) {
+          // Fallback to original behavior
+          this.flex.tune(deltaHz).catch((err) => { this.emit('error', `Tune failed: ${err.message}`); });
+          this.emit('dialMoved', applySteps, deltaHz, this.tuneRate, null);
+        }
+      }
+
+      // Debounce dial end — after user stops turning, optionally snap to 1kHz
+      if (this._dialEndTimer) clearTimeout(this._dialEndTimer);
+      this._dialEndTimer = setTimeout(async () => {
+        this._dialEndTimer = null;
+        if (!this._snapEnabled) return;
+        if (this.dialLocked) return;
+        const slice = this.flex.getActiveSlice();
+        if (!slice || !slice.freq_mhz) return;
+
+        const freqHz = Math.round(slice.freq_mhz * 1_000_000);
+        const snapped = Math.round(freqHz / 1000) * 1000;
+        if (snapped === freqHz) return;
+
+        const snappedMHz = snapped / 1_000_000;
+        this._suppressSnap(800);
+        // Update local slice cache and emit an immediate sliceUpdated so the
+        // UI reflects the snapped frequency without waiting for radio status.
+        try {
+          slice.freq_mhz = snappedMHz;
+          this._lastSnapSlice = slice.id;
+          this._lastSnapFreq = snappedMHz;
+          this.flex.emit('sliceUpdated', slice.id, { ...slice });
+          await this.flex.sendCmd(`slice tune ${slice.id} ${snappedMHz.toFixed(6)}`);
+          this.emit('actionExecuted', {
+            action: 'snap_khz',
+            btn: 'dial',
+            type: 'snap',
+            value: `${snappedMHz.toFixed(3)} MHz`
+          });
+        } catch (e) {
+          this.emit('error', `Snap failed: ${e.message}`);
+        }
+      }, 600);
     });
 
     // ── Button Down ──
@@ -165,14 +300,17 @@ class Controller extends EventEmitter {
         this.emit('ptt', true);
 
         // Start latch countdown — fires at 2.5s while button still held
-        this._pttLatchTimer = setTimeout(() => {
-          this._pttLatchTimer = null;
-          if (this._pttDown && !this._pttLatched) {
-            this._pttLatched = true;
-            this.emit('pttLatch', true);
-            this.emit('actionExecuted', { action: 'ptt_latch', btn: 'ptt', type: 'hold', value: 'LATCHED' });
-          }
-        }, 2500);
+        // Only start the timer when latch behaviour is enabled.
+        if (this._pttLatchEnabled) {
+          this._pttLatchTimer = setTimeout(() => {
+            this._pttLatchTimer = null;
+            if (this._pttDown && !this._pttLatched) {
+              this._pttLatched = true;
+              this.emit('pttLatch', true);
+              this.emit('actionExecuted', { action: 'ptt_latch', btn: 'ptt', type: 'hold', value: 'LATCHED' });
+            }
+          }, 2500);
+        }
       }
     });
 
@@ -259,6 +397,13 @@ class Controller extends EventEmitter {
             this._lastSnapFreq = snappedMHz;
             this._suppressSnap(800);
 
+            // Update local slice cache and emit immediate update so UI shows
+            // the snapped frequency right away, then tell radio to tune.
+            const slice = this.flex._slices.get(id);
+            if (slice) {
+              slice.freq_mhz = snappedMHz;
+              this.flex.emit('sliceUpdated', id, { ...slice });
+            }
             this.flex.sendCmd(`slice tune ${id} ${snappedMHz.toFixed(6)}`)
               .then(() => {
                 this.emit('actionExecuted', {

@@ -4,6 +4,26 @@ const { app, BrowserWindow, ipcMain } = require('electron');
 const path = require('path');
 const fs = require('fs');
 
+// Prefer a project-local userData directory to avoid OS cache permission issues
+try {
+  const localUserData = path.join(__dirname, '..', 'userData');
+  if (!fs.existsSync(localUserData)) fs.mkdirSync(localUserData, { recursive: true });
+  app.setPath('userData', localUserData);
+} catch (e) {
+  // ignore and fall back to default
+}
+
+// Global error handlers to avoid hard crashes from native modules (HID)
+process.on('uncaughtException', (err) => {
+  console.error('[FlexRC-28] Uncaught exception:', err && err.stack ? err.stack : err);
+  if (win && !win.isDestroyed()) send('app:error', { message: err && err.message ? err.message : String(err) });
+});
+
+process.on('unhandledRejection', (reason) => {
+  console.error('[FlexRC-28] Unhandled rejection:', reason);
+  if (win && !win.isDestroyed()) send('app:error', { message: reason && reason.message ? reason.message : String(reason) });
+});
+
 const { RC28 } = require('./rc28');
 const { FlexRadio } = require('./flex');
 const { Controller } = require('./controller');
@@ -24,6 +44,8 @@ function loadSettings() {
     actions: {},
     snapTuning: false,
     velocityTuning: true,
+    pttLatchEnabled: true,
+    tuningSensitivityLevel: 10,
   };
 }
 
@@ -41,10 +63,10 @@ let settings = loadSettings();
 
 function createWindow() {
   win = new BrowserWindow({
-    width: 560,
-    height: 680,
-    minWidth: 480,
-    minHeight: 600,
+    width: 720,
+    height: 760,
+    minWidth: 600,
+    minHeight: 700,
     frame: false,
     titleBarStyle: 'hidden',
     titleBarOverlay: {
@@ -96,6 +118,18 @@ function initHardware() {
 
   // Apply saved velocity setting (default on for new installs)
   controller.setVelocity(settings.velocityTuning !== false);
+    // Apply saved tuning sensitivity level
+    if (typeof controller.setTuningSensitivityLevel === 'function') {
+      controller.setTuningSensitivityLevel(settings.tuningSensitivityLevel || settings.reducedTuningLevel || 10);
+  }
+  // Apply saved tuning step override if present
+  if (settings.tuningStepOverride !== undefined && settings.tuningStepOverride !== null) {
+    if (typeof controller.setTuningStepOverride === 'function') controller.setTuningStepOverride(Number(settings.tuningStepOverride) || null);
+  }
+  // Apply saved PTT latch preference if present
+  if (settings.pttLatchEnabled !== undefined && typeof controller.setPTTLatchEnabled === 'function') {
+    controller.setPTTLatchEnabled(!!settings.pttLatchEnabled);
+  }
 
   // ── RC-28 events → renderer ──
   rc28.on('connected', (info) => {
@@ -136,8 +170,8 @@ function initHardware() {
   });
 
   // ── Controller events → renderer ──
-  controller.on('dialMoved', (steps, deltaHz, rate) => {
-    send('ctrl:dialMoved', { steps, deltaHz, rate });
+  controller.on('dialMoved', (steps, deltaHz, rate, predictedFreqHz) => {
+    send('ctrl:dialMoved', { steps, deltaHz, rate, predictedFreqHz });
   });
 
   controller.on('ptt', (on) => {
@@ -164,6 +198,10 @@ function initHardware() {
     send('ctrl:error', msg);
   });
 
+  controller.on('tuningStepChanged', (val) => {
+    send('ctrl:tuningStepChanged', val);
+  });
+
   controller.on('linkStatus', (status) => {
     send('ctrl:linkStatus', status);
   });
@@ -185,6 +223,9 @@ function initHardware() {
     });
     console.log('[FlexRC-28] Debug mode enabled — raw Flex output visible in activity log');
   }
+
+  // Notify renderer that hardware initialization is complete
+  send('app:ready');
 }
 
 function cleanup() {
@@ -195,15 +236,16 @@ function cleanup() {
 // ── IPC Handlers ─────────────────────────────────────────────────────────────
 
 // RC-28
-ipcMain.handle('rc28:open',  () => rc28.open());
-ipcMain.handle('rc28:close', () => rc28.close());
-ipcMain.handle('rc28:isConnected', () => rc28.isConnected());
+ipcMain.handle('rc28:open',  () => (rc28 ? rc28.open() : Promise.resolve(false)));
+ipcMain.handle('rc28:close', () => (rc28 ? rc28.close() : Promise.resolve(false)));
+ipcMain.handle('rc28:isConnected', () => (rc28 ? rc28.isConnected() : false));
 
 // Flex
 ipcMain.handle('flex:connect', async (_, { ip, stationName }) => {
   settings.radioIP = ip;
   settings.stationName = stationName;
   saveSettings(settings);
+  if (!flex) return { ok: false, error: 'Not initialized' };
   try {
     await flex.connect(ip, stationName);
     return { ok: true };
@@ -213,16 +255,18 @@ ipcMain.handle('flex:connect', async (_, { ip, stationName }) => {
 });
 
 ipcMain.handle('flex:disconnect', () => {
-  flex.disconnect();
+  if (flex) flex.disconnect();
 });
 
-ipcMain.handle('flex:isConnected', () => flex.isConnected());
+ipcMain.handle('flex:isConnected', () => (flex ? flex.isConnected() : false));
 
-ipcMain.handle('flex:getSlices', () => flex.getSlices());
+ipcMain.handle('flex:getSlices', () => (flex ? flex.getSlices() : []));
 
 ipcMain.handle('flex:setActiveSlice', (_, sliceId) => {
-  flex.setActiveSlice(sliceId);
+  if (flex) flex.setActiveSlice(sliceId);
 });
+
+ipcMain.handle('flex:getActiveSlice', () => (flex ? flex.getActiveSlice() : null));
 
 // Settings
 ipcMain.handle('settings:load', () => settings);
@@ -231,24 +275,45 @@ ipcMain.handle('settings:save', (_, newSettings) => {
   settings = { ...settings, ...newSettings };
   saveSettings(settings);
 
-  if (newSettings.actions) {
+  if (newSettings.actions && controller) {
     controller.setActions(newSettings.actions);
   }
 
-  if (newSettings.snapTuning !== undefined) {
+  if (newSettings.snapTuning !== undefined && controller) {
     controller.setSnap(!!newSettings.snapTuning);
   }
 
-  if (newSettings.velocityTuning !== undefined) {
+  if (newSettings.tuningSensitivityLevel !== undefined && controller) {
+    if (typeof controller.setTuningSensitivityLevel === 'function') controller.setTuningSensitivityLevel(Number(newSettings.tuningSensitivityLevel) || 10);
+  }
+
+  if (newSettings.velocityTuning !== undefined && controller) {
     controller.setVelocity(!!newSettings.velocityTuning);
+  }
+  if (newSettings.pttLatchEnabled !== undefined && controller && typeof controller.setPTTLatchEnabled === 'function') {
+    controller.setPTTLatchEnabled(!!newSettings.pttLatchEnabled);
+  }
+  if (newSettings.tuningStepOverride !== undefined && controller) {
+    if (newSettings.tuningStepOverride === null) controller.setTuningStepOverride(null);
+    else if (typeof controller.setTuningStepOverride === 'function') controller.setTuningStepOverride(Number(newSettings.tuningStepOverride) || null);
   }
 
   return settings;
 });
 
 // Controller info
-ipcMain.handle('ctrl:getActions', () => controller.getActions());
-ipcMain.handle('ctrl:getAvailableActions', () => controller.getAvailableActions());
+ipcMain.handle('ctrl:getActions', () => (controller ? controller.getActions() : {}));
+ipcMain.handle('ctrl:getAvailableActions', () => (controller ? controller.getAvailableActions() : []));
+ipcMain.handle('ctrl:setTuningStep', (_, hz) => {
+  if (controller && typeof controller.setTuningStepOverride === 'function') {
+    controller.setTuningStepOverride(hz);
+  }
+});
+ipcMain.handle('ctrl:setPTTLatchEnabled', (_, enabled) => {
+  if (controller && typeof controller.setPTTLatchEnabled === 'function') {
+    controller.setPTTLatchEnabled(!!enabled);
+  }
+});
 
 // Util
 function send(channel, data) {
